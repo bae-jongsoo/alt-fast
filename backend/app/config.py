@@ -13,6 +13,23 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_HOURS: int = 24
 
+    # Naver API
+    NAVER_CLIENT_ID: str = ""
+    NAVER_CLIENT_SECRET: str = ""
+
+    # KIS API
+    KIS_APP_KEY: str = ""
+    KIS_APP_SECRET: str = ""
+    KIS_HTS_ID: str = ""
+    KIS_ACCT_STOCK: str = ""
+
+    # DART API
+    DART_API_KEY: str = ""
+
+    # Gemini (OpenAI 호환)
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
     # Admin
     ADMIN_ID: str = "admin"
     ADMIN_PW: str = "admin"

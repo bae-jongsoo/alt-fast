@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, Index, Numeric, String, func
+from sqlalchemy import BigInteger, Date, Index, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -25,9 +25,9 @@ class MarketSnapshot(Base):
 
     # 시가총액 / 자본금 등
     lstn_stcn: Mapped[str] = mapped_column(String(128), default="")
-    hts_avls: Mapped[int | None] = mapped_column(nullable=True)
+    hts_avls: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     cpfn: Mapped[float | None] = mapped_column(Numeric(20, 6), nullable=True)
-    stck_fcam: Mapped[int | None] = mapped_column(nullable=True)
+    stck_fcam: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     # 52주 고저
     w52_hgpr: Mapped[int | None] = mapped_column(nullable=True)
@@ -55,9 +55,9 @@ class MarketSnapshot(Base):
 
     # 외국인 / 프로그램
     hts_frgn_ehrt: Mapped[float | None] = mapped_column(Numeric(20, 6), nullable=True)
-    frgn_hldn_qty: Mapped[int | None] = mapped_column(nullable=True)
-    frgn_ntby_qty: Mapped[int | None] = mapped_column(nullable=True)
-    pgtr_ntby_qty: Mapped[int | None] = mapped_column(nullable=True)
+    frgn_hldn_qty: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    frgn_ntby_qty: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    pgtr_ntby_qty: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     # 거래 / 대출 / 증거금
     vol_tnrt: Mapped[float | None] = mapped_column(Numeric(20, 6), nullable=True)
@@ -82,7 +82,7 @@ class MarketSnapshot(Base):
     bstp_kor_isnm: Mapped[str] = mapped_column(String(128), default="")
     vi_cls_code: Mapped[str] = mapped_column(String(16), default="")
     ovtm_vi_cls_code: Mapped[str] = mapped_column(String(16), default="")
-    last_ssts_cntg_qty: Mapped[int | None] = mapped_column(nullable=True)
+    last_ssts_cntg_qty: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     apprch_rate: Mapped[float | None] = mapped_column(Numeric(20, 6), nullable=True)
 
     __table_args__ = (

@@ -1,4 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+KST = timezone(timedelta(hours=9))
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,7 +43,7 @@ async def _get_latest_price(db: AsyncSession, stock_code: str) -> float:
 
 
 async def _get_summary(db: AsyncSession) -> SummaryCard:
-    now = datetime.utcnow()
+    now = datetime.now(KST).replace(tzinfo=None)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 현금
@@ -126,7 +128,7 @@ async def _get_holdings(db: AsyncSession) -> list[HoldingStock]:
 
 
 async def _get_system_status(db: AsyncSession) -> list[SystemStatus]:
-    now = datetime.utcnow()
+    now = datetime.now(KST).replace(tzinfo=None)
 
     model_map = {
         "trader": (DecisionHistory, DecisionHistory.created_at),
@@ -163,7 +165,7 @@ async def _get_system_status(db: AsyncSession) -> list[SystemStatus]:
 
 
 async def _get_trading_summary(db: AsyncSession) -> TradingCycleSummary:
-    now = datetime.utcnow()
+    now = datetime.now(KST).replace(tzinfo=None)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     result = await db.execute(
@@ -241,5 +243,5 @@ async def get_dashboard(db: AsyncSession) -> DashboardResponse:
         trading_summary=trading_summary,
         recent_orders=recent_orders,
         recent_errors=recent_errors,
-        last_updated_at=datetime.utcnow(),
+        last_updated_at=datetime.now(KST).replace(tzinfo=None),
     )

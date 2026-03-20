@@ -11,3 +11,4 @@ redis[hiredis]
 httpx
 typer[all]
 python-multipart
+openai>=1.0.0

@@ -1,4 +1,6 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+KST = timezone(timedelta(hours=9))
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,9 +25,9 @@ async def get_news(
     useful: str | None = None,
 ) -> NewsListResponse:
     if start_date is None:
-        start_date = (datetime.utcnow() - timedelta(days=7)).date()
+        start_date = (datetime.now(KST).replace(tzinfo=None) - timedelta(days=7)).date()
     if end_date is None:
-        end_date = datetime.utcnow().date()
+        end_date = datetime.now(KST).replace(tzinfo=None).date()
 
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date, datetime.max.time())
@@ -77,9 +79,9 @@ async def get_dart(
     end_date: date | None = None,
 ) -> DartListResponse:
     if start_date is None:
-        start_date = (datetime.utcnow() - timedelta(days=7)).date()
+        start_date = (datetime.now(KST).replace(tzinfo=None) - timedelta(days=7)).date()
     if end_date is None:
-        end_date = datetime.utcnow().date()
+        end_date = datetime.now(KST).replace(tzinfo=None).date()
 
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date, datetime.max.time())
