@@ -1,0 +1,31 @@
+[project]
+name = "alt-fast"
+version = "0.1.0"
+description = "ALT - 한국 주식 자동매매 LLM 시스템 (FastAPI)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg",
+    "alembic>=1.13.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-jose[cryptography]",
+    "passlib[bcrypt]",
+    "redis[hiredis]",
+    "httpx",
+    "typer[all]",
+    "python-multipart",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
