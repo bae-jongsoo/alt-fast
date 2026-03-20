@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
 
+    # Webhook
+    WEBHOOK_SECRET: str = ""
+
     # Admin
     ADMIN_ID: str = "admin"
     ADMIN_PW: str = "admin"
