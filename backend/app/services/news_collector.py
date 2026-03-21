@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.news import News
 from app.models.target_stock import TargetStock
+from app.shared.llm import LLMAuthError, ask_llm
 from app.shared.naver_news import fetch_news
+from app.shared.web_content import extract_article_text
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,54 @@ def _parse_published_at(raw_pub_date: str | None) -> datetime:
         except (TypeError, ValueError, IndexError):
             pass
     return datetime.now(KST).replace(tzinfo=None)
+
+
+NEWS_SUMMARY_PROMPT = """아래는 뉴스 본문이다. 이걸 요약하고 주식 단타에 도움이 되는지 판단 후,
+{{"summary": "...", "useful": true}} 형태로 응답 해달라.
+
+<뉴스 본문>
+{article_text}
+"""
+
+
+async def _summarize_news(session: AsyncSession, news: News) -> None:
+    """뉴스 본문을 크롤링하고 LLM으로 요약한다."""
+    try:
+        article_text = await extract_article_text(news.link)
+    except Exception:
+        news.summary = news.description
+        news.useful = None
+        await session.commit()
+        return
+
+    prompt = NEWS_SUMMARY_PROMPT.format(article_text=article_text)
+    raw_response = await ask_llm(prompt)
+
+    import json
+    # JSON 추출
+    text = raw_response.strip()
+    json_start = text.find("{")
+    if json_start >= 0:
+        text = text[json_start:]
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        news.summary = news.description
+        news.useful = None
+        await session.commit()
+        return
+
+    summary = (parsed.get("summary") or "").strip()
+    useful = parsed.get("useful")
+
+    if isinstance(useful, str):
+        useful = useful.strip().lower() == "true"
+    elif useful is not None:
+        useful = bool(useful)
+
+    news.summary = summary or news.description
+    news.useful = useful
+    await session.commit()
 
 
 async def collect_news_for_stock(
@@ -75,7 +125,25 @@ async def collect_news_for_stock(
     if saved > 0:
         await session.commit()
 
-    return {"stock_code": stock_code, "fetched": len(items), "saved": saved, "skipped": skipped}
+    # 요약이 없는 뉴스에 대해 LLM 요약 수행
+    summarized = 0
+    unsummarized = await session.execute(
+        select(News).where(
+            News.stock_code == stock_code,
+            News.summary.is_(None),
+        ).order_by(News.created_at.desc()).limit(limit)
+    )
+    for news in unsummarized.scalars().all():
+        try:
+            await _summarize_news(session, news)
+            summarized += 1
+        except LLMAuthError:
+            logger.error("LLM 인증 실패, 요약 중단")
+            break
+        except Exception:
+            logger.exception("뉴스 요약 실패 news_id=%s", news.id)
+
+    return {"stock_code": stock_code, "fetched": len(items), "saved": saved, "skipped": skipped, "summarized": summarized}
 
 
 async def collect_all_news(
