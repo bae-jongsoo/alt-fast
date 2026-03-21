@@ -124,26 +124,21 @@ async def run_trading_cycle(db: AsyncSession) -> DecisionHistory:
     result = decision.get("result")
 
     if not is_error and result == "BUY":
-        order = await execute_buy(
+        await execute_buy(
             db,
             decision_history=decision_history,
             stock_code=str(decision["stock_code"]),
             price=Decimal(str(decision["price"])),
             quantity=int(decision["quantity"]),
         )
-        stock_name = decision.get("stock_name", decision.get("stock_code", ""))
-        await _alert(f"[매수] {stock_name} {decision['quantity']}주 @ {decision['price']}원")
     elif not is_error and result == "SELL":
-        order = await execute_sell(
+        await execute_sell(
             db,
             decision_history=decision_history,
             stock_code=str(decision["stock_code"]),
             price=Decimal(str(decision["price"])),
             quantity=int(decision["quantity"]),
         )
-        stock_name = decision.get("stock_name", decision.get("stock_code", ""))
-        pnl = f" (손익: {order.profit_loss:+})" if order.profit_loss is not None else ""
-        await _alert(f"[매도] {stock_name} {decision['quantity']}주 @ {decision['price']}원{pnl}")
 
     await db.commit()
     return decision_history
