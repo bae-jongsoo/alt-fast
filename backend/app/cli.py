@@ -112,7 +112,17 @@ def trader_run(
                     continue
 
                 typer.echo(f"트레이딩 사이클 실행: {codes}")
-                # TODO: 실제 트레이딩 로직 (shared/external/kis.py 등 연동)
+                try:
+                    from app.services.trader import run_trading_cycle
+
+                    decision = await run_trading_cycle(session)
+                    typer.echo(
+                        f"트레이딩 사이클 완료: id={decision.id} "
+                        f"result={decision.decision} "
+                        f"error={decision.error_message or 'N/A'}"
+                    )
+                except Exception as exc:
+                    typer.echo(f"트레이딩 사이클 오류: {exc}", err=True)
 
             await asyncio.sleep(interval)
 
