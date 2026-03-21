@@ -33,6 +33,9 @@ app.add_typer(todo_app, name="todo")
 db_app = typer.Typer(help="데이터베이스 관련 명령어")
 app.add_typer(db_app, name="db")
 
+review_app = typer.Typer(help="일일 회고/리포트")
+app.add_typer(review_app, name="review")
+
 
 # ── 유틸리티 ─────────────────────────────────────────────────────
 
@@ -296,3 +299,36 @@ def db_migrate() -> None:
         typer.echo(f"마이그레이션 실패 (exit code: {result.returncode})")
         raise typer.Exit(code=1)
     typer.echo("마이그레이션 완료.")
+
+
+# ── review ───────────────────────────────────────────────────────
+
+@review_app.command("daily")
+def review_daily(
+    date: Optional[str] = typer.Option(
+        None, "--date", help="대상 날짜 (YYYY-MM-DD, KST). 미지정 시 오늘"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="텔레그램 전송 없이 출력만"),
+) -> None:
+    """장마감 일일 회고 생성 + 텔레그램 전송."""
+
+    async def _run() -> None:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from app.services.daily_review import generate_and_send_daily_review
+
+        kst = ZoneInfo("Asia/Seoul")
+        target_dt = datetime.now(tz=kst)
+        if date:
+            # accept YYYY-MM-DD
+            target_dt = datetime.fromisoformat(date).replace(tzinfo=kst)
+
+        msg = await generate_and_send_daily_review(target_dt, dry_run=dry_run)
+        typer.echo(msg)
+
+    asyncio.run(_run())
+
+
+if __name__ == "__main__":
+    app()
