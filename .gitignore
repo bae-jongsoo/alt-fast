@@ -47,6 +47,3 @@ tasks/
 
 # Cache
 docs_cache/
-
-# Server docs
-READSERVER.md
