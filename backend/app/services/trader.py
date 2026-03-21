@@ -180,12 +180,26 @@ async def build_buy_prompt(
 
     stock_contexts_json = json.dumps(stock_contexts, ensure_ascii=False, default=_json_default, indent=2)
 
+    # 최근 거래이력 (왕복매매 방지용)
+    recent_trades = await _get_recent_trades(db, current_time)
+    recent_trades_block = ""
+    if recent_trades:
+        recent_trades_json = json.dumps(recent_trades, ensure_ascii=False, default=_json_default, indent=2)
+        recent_trades_block = (
+            f"\n<최근거래이력>\n"
+            f"{recent_trades_json}\n"
+            f"</최근거래이력>\n"
+            f"- 위 거래는 최근 {RECENT_TRADE_LOOKBACK_MINUTES}분 내 체결된 내역입니다. "
+            "동일 종목을 같은 근거로 재매수하는 것은 왕복 매매이므로 피하세요.\n"
+            "  새로운 모멘텀이나 명확히 다른 진입 근거가 없다면 해당 종목은 HOLD하세요.\n"
+        )
+
     prompt = template.content.format(
         current_time=current_time.isoformat(),
         cash_amount=cash.total_amount,
         stock_contexts=stock_contexts_json,
     )
-    return prompt
+    return prompt + recent_trades_block
 
 
 async def build_sell_prompt(
@@ -564,6 +578,44 @@ def _downgraded_to_hold(original_payload: dict, normalized_payload: dict) -> boo
     normalized_decision = normalized_payload.get("decision", {})
     normalized_result = str(normalized_decision.get("result")).strip().upper()
     return original_result in {"BUY", "SELL"} and normalized_result == "HOLD"
+
+
+async def _get_recent_trades(db: AsyncSession, now: datetime) -> list[dict]:
+    """최근 N분 내 체결된 주문 이력을 반환한다 (왕복매매 방지용)."""
+    cutoff = now - timedelta(minutes=RECENT_TRADE_LOOKBACK_MINUTES)
+    result = await db.execute(
+        select(OrderHistory)
+        .where(OrderHistory.created_at >= cutoff)
+        .order_by(desc(OrderHistory.created_at))
+    )
+    orders = result.scalars().all()
+
+    trades = []
+    for order in orders:
+        # decision_history에서 reason 추출
+        reason = None
+        dh_result = await db.execute(
+            select(DecisionHistory).where(DecisionHistory.id == order.decision_history_id)
+        )
+        dh = dh_result.scalar_one_or_none()
+        if dh and isinstance(dh.parsed_decision, dict):
+            analysis = dh.parsed_decision.get("analysis")
+            if analysis:
+                for item in analysis:
+                    if item.get("stock_code") == order.stock_code and item.get("reason"):
+                        reason = item["reason"]
+                        break
+
+        trades.append({
+            "side": order.order_type,
+            "stock_code": order.stock_code,
+            "stock_name": order.stock_name,
+            "price": float(order.order_price),
+            "quantity": order.order_quantity,
+            "executed_at": _to_iso(order.created_at),
+            "reason": reason,
+        })
+    return trades
 
 
 def _to_iso(value: datetime | None) -> str | None:
