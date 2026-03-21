@@ -35,6 +35,7 @@ from app.services.asset_manager import (
 )
 from app.shared.json_helpers import normalize_trade_decision, parse_llm_json_object
 from app.shared.llm import ask_llm
+from app.shared.telegram import send_message as send_telegram
 
 logger = logging.getLogger(__name__)
 
@@ -111,28 +112,49 @@ async def run_trading_cycle(db: AsyncSession) -> DecisionHistory:
         error_message=error_message,
     )
 
+    # 텔레그램 알림: 에러 시
+    if not request_payload:
+        await _alert(f"[트레이더] 데이터 수집 이상 - 프롬프트 생성 실패 (id={decision_history.id})")
+    elif not response_payload:
+        await _alert(f"[트레이더] LLM 응답 없음 (id={decision_history.id}, error={error_message})")
+    elif is_error:
+        await _alert(f"[트레이더] 에러 (id={decision_history.id}, error={error_message})")
+
     decision = parsed_decision.get("decision", {})
     result = decision.get("result")
 
     if not is_error and result == "BUY":
-        await execute_buy(
+        order = await execute_buy(
             db,
             decision_history=decision_history,
             stock_code=str(decision["stock_code"]),
             price=Decimal(str(decision["price"])),
             quantity=int(decision["quantity"]),
         )
+        stock_name = decision.get("stock_name", decision.get("stock_code", ""))
+        await _alert(f"[매수] {stock_name} {decision['quantity']}주 @ {decision['price']}원")
     elif not is_error and result == "SELL":
-        await execute_sell(
+        order = await execute_sell(
             db,
             decision_history=decision_history,
             stock_code=str(decision["stock_code"]),
             price=Decimal(str(decision["price"])),
             quantity=int(decision["quantity"]),
         )
+        stock_name = decision.get("stock_name", decision.get("stock_code", ""))
+        pnl = f" (손익: {order.profit_loss:+})" if order.profit_loss is not None else ""
+        await _alert(f"[매도] {stock_name} {decision['quantity']}주 @ {decision['price']}원{pnl}")
 
     await db.commit()
     return decision_history
+
+
+async def _alert(message: str) -> None:
+    """텔레그램 알림 발송 (실패해도 무시)."""
+    try:
+        await send_telegram(message)
+    except Exception:
+        logger.exception("텔레그램 알림 발송 실패")
 
 
 # ---------------------------------------------------------------------------

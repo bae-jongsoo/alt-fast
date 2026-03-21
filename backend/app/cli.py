@@ -253,16 +253,87 @@ def ws_subscribe(
 # ── retro ────────────────────────────────────────────────────────
 
 @retro_app.command("daily")
-def retro_daily() -> None:
+def retro_daily(
+    date: Optional[str] = typer.Option(None, "--date", help="KST 날짜 (YYYY-MM-DD, 기본: 오늘)"),
+    out_dir: str = typer.Option("docs/retro", "--out-dir", help="출력 디렉토리"),
+) -> None:
     """일별 거래 회고 마크다운 생성."""
 
     async def _run() -> None:
-        from app.database import async_session
+        from datetime import date as date_type
+        from pathlib import Path
+        from statistics import mean, median
 
-        typer.echo("일별 거래 회고 생성 중...")
+        from sqlalchemy import select, func
+
+        from app.database import async_session
+        from app.models.order_history import OrderHistory
+        from app.models.decision_history import DecisionHistory
+
+        target_date = date_type.fromisoformat(date) if date else datetime.now().date()
+        start = datetime.combine(target_date, datetime.min.time())
+        end = start + timedelta(days=1)
+
         async with async_session() as session:
-            # TODO: 일별 거래 회고 마크다운 생성 로직
-            typer.echo("회고 생성 완료.")
+            result = await session.execute(
+                select(OrderHistory)
+                .where(OrderHistory.order_placed_at >= start, OrderHistory.order_placed_at < end)
+                .order_by(OrderHistory.order_placed_at, OrderHistory.id)
+            )
+            orders = result.scalars().all()
+            total = len(orders)
+
+            buy_n = sum(1 for o in orders if o.order_type == "BUY")
+            sell_n = sum(1 for o in orders if o.order_type == "SELL")
+
+            # 종목별 집계
+            by_stock: dict[str, int] = {}
+            for o in orders:
+                by_stock[o.stock_code] = by_stock.get(o.stock_code, 0) + 1
+
+            # 주문 간격
+            times = [o.order_placed_at for o in orders]
+            deltas = [(t2 - t1).total_seconds() for t1, t2 in zip(times[:-1], times[1:]) if t2 >= t1] if len(times) >= 2 else []
+
+            # 마크다운 생성
+            out_path = Path(out_dir).expanduser().resolve()
+            out_path.mkdir(parents=True, exist_ok=True)
+            filepath = out_path / f"{target_date.isoformat()}.md"
+
+            lines = [
+                f"# Daily Retro ({target_date.isoformat()})",
+                "",
+                f"- Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                "",
+                "## 1) 주문 요약",
+                "",
+                f"- 총 주문 수: **{total}**",
+                f"- BUY **{buy_n}** / SELL **{sell_n}**",
+                "",
+                "### 종목별 주문 수",
+            ]
+            for code, cnt in sorted(by_stock.items(), key=lambda x: -x[1]):
+                lines.append(f"- {code}: {cnt}")
+            if not by_stock:
+                lines.append("- (주문 없음)")
+            lines.append("")
+
+            if deltas:
+                lines.append("## 2) 주문 간격")
+                lines.append("")
+                lines.append(f"- n={len(deltas)}, min={min(deltas):.1f}s, median={median(deltas):.1f}s, mean={mean(deltas):.1f}s")
+                lines.append(f"- <30s: {sum(1 for d in deltas if d < 30)}회 / <60s: {sum(1 for d in deltas if d < 60)}회")
+                lines.append("")
+
+            # 손익 요약
+            total_pnl = sum(float(o.profit_loss) for o in orders if o.profit_loss is not None)
+            lines.append("## 3) 손익 요약")
+            lines.append("")
+            lines.append(f"- 실현손익 합계: **{total_pnl:+,.0f}원**")
+            lines.append("")
+
+            filepath.write_text("\n".join(lines), encoding="utf-8")
+            typer.echo(f"회고 생성 완료: {filepath}")
 
     asyncio.run(_run())
 
