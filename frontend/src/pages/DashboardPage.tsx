@@ -29,10 +29,10 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
       {/* 헤더: 제목 + 새로고침 버튼 */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">대시보드</h1>
+        <h1 className="text-lg font-semibold">대시보드</h1>
         <div className="flex items-center gap-3">
           {dataUpdatedAt > 0 && (
             <span className="text-sm text-muted-foreground">

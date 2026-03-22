@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import AsyncGenerator
 
 from openai import AsyncOpenAI
@@ -23,8 +23,9 @@ from app.models.minute_candle import MinuteCandle
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
+SYSTEM_PROMPT_TEMPLATE = (
     "당신은 ALT 한국 주식 자동매매 시스템의 AI 어시스턴트입니다.\n"
+    "현재 날짜와 시간: {now}\n\n"
     "사용자의 질문에 대해 시스템에 저장된 데이터를 조회하여 정확하게 답변합니다.\n"
     "답변은 한국어로 하며, 마크다운 형식을 사용할 수 있습니다.\n"
     "금액은 원 단위로, 수익률은 %로 표시합니다.\n\n"
@@ -43,7 +44,7 @@ TOOLS = [
         "function": {
             "name": "get_assets",
             "description": "현재 보유 자산 조회 (현금 + 보유종목)",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "parameters": {"type": "object", "properties": {}},
         },
     },
     {
@@ -71,7 +72,7 @@ TOOLS = [
                         "description": "최대 조회 건수 (기본 20)",
                     },
                 },
-                "required": [],
+
             },
         },
     },
@@ -100,7 +101,7 @@ TOOLS = [
                         "description": "최대 조회 건수 (기본 20)",
                     },
                 },
-                "required": [],
+
             },
         },
     },
@@ -146,7 +147,7 @@ TOOLS = [
                         "description": "최대 조회 건수 (기본 10)",
                     },
                 },
-                "required": [],
+
             },
         },
     },
@@ -175,7 +176,7 @@ TOOLS = [
                         "description": "최대 조회 건수 (기본 10)",
                     },
                 },
-                "required": [],
+
             },
         },
     },
@@ -221,6 +222,13 @@ def _dt(v: str | None, fmt: str = "%Y-%m-%d") -> datetime | None:
     return datetime.strptime(v, fmt)
 
 
+def _dt_end(v: str | None) -> datetime | None:
+    """end_date를 다음날 자정으로 변환 (해당일 데이터 포함)."""
+    if v is None:
+        return None
+    return datetime.strptime(v, "%Y-%m-%d") + timedelta(days=1)
+
+
 def _serialize(obj: object) -> str:
     """datetime / Decimal 등을 JSON-safe 문자열로 변환."""
     if isinstance(obj, datetime):
@@ -262,7 +270,7 @@ async def get_order_history(
         if start_date:
             stmt = stmt.where(OrderHistory.created_at >= _dt(start_date))
         if end_date:
-            stmt = stmt.where(OrderHistory.created_at <= _dt(end_date, "%Y-%m-%d"))
+            stmt = stmt.where(OrderHistory.created_at <= _dt_end(end_date))
         result = await db.execute(stmt)
         rows = result.scalars().all()
         return [
@@ -300,7 +308,7 @@ async def get_decision_history(
         if start_date:
             stmt = stmt.where(DecisionHistory.created_at >= _dt(start_date))
         if end_date:
-            stmt = stmt.where(DecisionHistory.created_at <= _dt(end_date, "%Y-%m-%d"))
+            stmt = stmt.where(DecisionHistory.created_at <= _dt_end(end_date))
         result = await db.execute(stmt)
         rows = result.scalars().all()
         return [
@@ -362,7 +370,7 @@ async def get_news(
         if start_date:
             stmt = stmt.where(News.created_at >= _dt(start_date))
         if end_date:
-            stmt = stmt.where(News.created_at <= _dt(end_date, "%Y-%m-%d"))
+            stmt = stmt.where(News.created_at <= _dt_end(end_date))
         result = await db.execute(stmt)
         rows = result.scalars().all()
         return [
@@ -394,7 +402,7 @@ async def get_dart_disclosures(
         if start_date:
             stmt = stmt.where(DartDisclosure.created_at >= _dt(start_date))
         if end_date:
-            stmt = stmt.where(DartDisclosure.created_at <= _dt(end_date, "%Y-%m-%d"))
+            stmt = stmt.where(DartDisclosure.created_at <= _dt_end(end_date))
         result = await db.execute(stmt)
         rows = result.scalars().all()
         return [
@@ -510,7 +518,9 @@ async def chat_stream(
     history = history or []
 
     # 메시지 구성
-    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    now = datetime.now().strftime("%Y년 %m월 %d일 %H시 %M분")
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(now=now)
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
@@ -533,7 +543,7 @@ async def chat_stream(
 
             # tool call 처리
             assistant_msg = choice.message
-            messages.append(assistant_msg.model_dump())
+            messages.append(assistant_msg.model_dump(exclude_none=True))
 
             for tool_call in assistant_msg.tool_calls:
                 fn_name = tool_call.function.name

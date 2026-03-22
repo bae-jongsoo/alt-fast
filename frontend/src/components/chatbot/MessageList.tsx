@@ -8,6 +8,7 @@ interface MessageListProps {
   isStreaming: boolean;
   error: string | null;
   onRetry: () => void;
+  wide?: boolean;
 }
 
 function TypingIndicator() {
@@ -24,11 +25,11 @@ function TypingIndicator() {
   );
 }
 
-function AssistantMessage({ content }: { content: string }) {
+function AssistantMessage({ content, wide }: { content: string; wide?: boolean }) {
   return (
     <div className="flex items-start gap-2">
-      <div className="bg-muted max-w-[85%] rounded-lg px-3 py-2">
-        <div className="prose prose-sm dark:prose-invert max-w-none [&_table]:block [&_table]:overflow-x-auto">
+      <div className={`bg-muted rounded-lg px-3 py-2 ${wide ? "max-w-full" : "max-w-[85%]"}`}>
+        <div className="prose prose-sm dark:prose-invert max-w-none [&_table]:block [&_table]:overflow-x-auto [&_table]:whitespace-nowrap">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
       </div>
@@ -51,6 +52,7 @@ export default function MessageList({
   isStreaming,
   error,
   onRetry,
+  wide,
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +70,7 @@ export default function MessageList({
         if (isStreaming && i === messages.length - 1 && msg.content === "") {
           return <TypingIndicator key={i} />;
         }
-        return <AssistantMessage key={i} content={msg.content} />;
+        return <AssistantMessage key={i} content={msg.content} wide={wide} />;
       })}
 
       {error && (

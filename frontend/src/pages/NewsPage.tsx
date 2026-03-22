@@ -93,8 +93,8 @@ export default function NewsPage() {
   }, []);
 
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold">뉴스·공시</h1>
+    <div className="mx-auto max-w-7xl space-y-4 px-4 py-6">
+      <h1 className="text-lg font-semibold">뉴스·공시</h1>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>

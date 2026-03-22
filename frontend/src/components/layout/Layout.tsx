@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Navbar from "./Navbar";
 import ChatFAB from "@/components/chatbot/ChatFAB";
 import ChatPanel from "@/components/chatbot/ChatPanel";
 
 export default function Layout() {
   const [chatOpen, setChatOpen] = useState(false);
+  const { pathname } = useLocation();
+  const isChatPage = pathname === "/chat";
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -13,8 +15,12 @@ export default function Layout() {
       <main className="flex-1">
         <Outlet />
       </main>
-      <ChatFAB open={chatOpen} onToggle={() => setChatOpen((v) => !v)} />
-      <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
+      {!isChatPage && (
+        <>
+          <ChatFAB open={chatOpen} onToggle={() => setChatOpen((v) => !v)} />
+          <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
+        </>
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import TradesPage from "@/pages/TradesPage";
 import NewsPage from "@/pages/NewsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import LoginPage from "@/pages/LoginPage";
+import ChatPage from "@/pages/ChatPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,6 +31,7 @@ function App() {
               <Route path="/news" element={<NewsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/chat" element={<ChatPage />} />
             </Route>
             {/* 존재하지 않는 경로 → 대시보드로 리다이렉트 */}
             <Route path="*" element={<Navigate to="/" replace />} />

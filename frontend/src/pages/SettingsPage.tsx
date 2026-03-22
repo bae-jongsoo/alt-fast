@@ -60,8 +60,8 @@ export default function SettingsPage() {
   }, []);
 
   return (
-    <div className="space-y-6 p-6">
-      <h1 className="text-2xl font-bold">설정</h1>
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+      <h1 className="text-lg font-semibold">설정</h1>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
