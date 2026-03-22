@@ -20,6 +20,7 @@ dependencies = [
     "python-kis>=2.1.6",
     "opendartreader",
     "openai>=1.0.0",
+    "ipython>=9.10.0",
 ]
 
 [tool.setuptools.packages.find]
