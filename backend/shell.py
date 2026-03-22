@@ -26,7 +26,9 @@ async def init():
     session = async_session()
     await session.__aenter__()
 
-asyncio.get_event_loop().run_until_complete(init())
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+loop.run_until_complete(init())
 
 print("=" * 50)
 print("ALT-Fast Shell  (.venv/bin/ipython -i shell.py)")
@@ -38,3 +40,7 @@ print("예시:")
 print("  result = await session.execute(select(News).limit(5))")
 print("  rows = result.scalars().all()")
 print("=" * 50)
+
+if __name__ == "__main__":
+    from IPython import start_ipython
+    start_ipython(argv=[], user_ns=globals())
