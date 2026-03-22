@@ -34,7 +34,7 @@ from app.services.asset_manager import (
     get_open_position,
 )
 from app.shared.json_helpers import normalize_trade_decision, parse_llm_json_object
-from app.shared.llm import ask_llm_high as ask_llm
+from app.shared.llm import ask_llm_by_level, get_llm_level
 from app.shared.telegram import send_message as send_telegram
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,8 @@ async def run_trading_cycle(db: AsyncSession) -> DecisionHistory:
                 error_message=None,
             )
 
-        response_payload = await ask_llm(request_payload)
+        level = await get_llm_level("llm_trading", "high")
+        response_payload = await ask_llm_by_level(level, request_payload)
         parsed_payload = parse_llm_json_object(response_payload)
         normalized_decision = normalize_trade_decision(parsed_payload)
         parsed_decision = normalized_decision

@@ -35,7 +35,10 @@ DEFAULT_PARAMETERS: dict[str, str] = {
     "news_count": "10",
     "dart_interval": "600",
     "market_snapshot_interval": "60",
-    "chatbot_backend": "gemini",
+    "llm_trading": "high",
+    "llm_review": "high",
+    "llm_news": "normal",
+    "llm_chatbot": "gemini",
 }
 
 PARAMETER_RULES: dict[str, dict] = {
@@ -46,7 +49,10 @@ PARAMETER_RULES: dict[str, dict] = {
     "news_count": {"min": 1, "max": 50, "type": "int"},
     "dart_interval": {"min": 60, "max": 7200, "type": "int"},
     "market_snapshot_interval": {"min": 10, "max": 600, "type": "int"},
-    "chatbot_backend": {"options": ["gemini", "openclaw"], "type": "select"},
+    "llm_trading": {"options": ["normal", "high"], "type": "select"},
+    "llm_review": {"options": ["normal", "high"], "type": "select"},
+    "llm_news": {"options": ["normal", "high"], "type": "select"},
+    "llm_chatbot": {"options": ["normal", "high", "gemini"], "type": "select"},
 }
 
 # 프롬프트 필수 변수 목록

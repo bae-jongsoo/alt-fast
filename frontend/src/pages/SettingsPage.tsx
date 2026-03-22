@@ -17,6 +17,7 @@ export default function SettingsPage() {
   const [isDirty, setIsDirty] = useState(false);
   const [stockEditing, setStockEditing] = useState(false);
   const [paramEditing, setParamEditing] = useState(false);
+  const [modelEditing, setModelEditing] = useState(false);
 
   // 편집 모드 이탈 경고: 브라우저 탭 닫기/새로고침
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function SettingsPage() {
         setIsDirty(false);
         setStockEditing(false);
         setParamEditing(false);
+        setModelEditing(false);
       }
       setActiveTab(tabValue);
     },
@@ -59,6 +61,10 @@ export default function SettingsPage() {
     setParamEditing(editing);
   }, []);
 
+  const handleModelEditToggle = useCallback((editing: boolean) => {
+    setModelEditing(editing);
+  }, []);
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
       <h1 className="text-lg font-semibold">설정</h1>
@@ -67,6 +73,7 @@ export default function SettingsPage() {
         <TabsList>
           <TabsTrigger value="stocks">종목 설정</TabsTrigger>
           <TabsTrigger value="prompts">프롬프트 설정</TabsTrigger>
+          <TabsTrigger value="models">모델 설정</TabsTrigger>
           <TabsTrigger value="parameters">시스템 파라미터</TabsTrigger>
         </TabsList>
 
@@ -82,11 +89,22 @@ export default function SettingsPage() {
           <PromptSettings onDirtyChange={handleDirtyChange} />
         </TabsContent>
 
+        <TabsContent value="models">
+          <ParameterSettings
+            isEditing={modelEditing}
+            onEditToggle={handleModelEditToggle}
+            onDirtyChange={handleDirtyChange}
+            filterKeys={(key) => key.startsWith("llm_")}
+            title="모델 설정"
+          />
+        </TabsContent>
+
         <TabsContent value="parameters">
           <ParameterSettings
             isEditing={paramEditing}
             onEditToggle={handleParamEditToggle}
             onDirtyChange={handleDirtyChange}
+            filterKeys={(key) => !key.startsWith("llm_")}
           />
         </TabsContent>
       </Tabs>

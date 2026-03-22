@@ -119,3 +119,24 @@ async def ask_llm_high(prompt: str, timeout_seconds: int = 120) -> str:
         raise RuntimeError("LLM(high) 응답이 비어있습니다")
 
     return stdout
+
+
+async def ask_llm_by_level(level: str, prompt: str, timeout_seconds: int = 120) -> str:
+    """level에 따라 적절한 LLM을 호출한다. (normal/high)"""
+    if level == "high":
+        return await ask_llm_high(prompt, timeout_seconds=timeout_seconds)
+    return await ask_llm(prompt, timeout_seconds=timeout_seconds)
+
+
+async def get_llm_level(param_key: str, default: str = "normal") -> str:
+    """DB에서 LLM 레벨 파라미터를 읽는다."""
+    from sqlalchemy import select
+    from app.database import async_session
+    from app.models.system_parameter import SystemParameter
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(SystemParameter).where(SystemParameter.key == param_key)
+        )
+        param = result.scalar_one_or_none()
+        return param.value if param else default

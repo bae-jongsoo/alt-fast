@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.news import News
 from app.models.target_stock import TargetStock
-from app.shared.llm import LLMAuthError, ask_llm
+from app.shared.llm import LLMAuthError, ask_llm_by_level, get_llm_level
 from app.shared.naver_news import fetch_news
 from app.shared.web_content import extract_article_text
 
@@ -53,7 +53,8 @@ async def _summarize_news(session: AsyncSession, news: News) -> None:
         return
 
     prompt = NEWS_SUMMARY_PROMPT.format(article_text=article_text)
-    raw_response = await ask_llm(prompt)
+    level = await get_llm_level("llm_news", "normal")
+    raw_response = await ask_llm_by_level(level, prompt)
 
     import json
     # JSON 추출

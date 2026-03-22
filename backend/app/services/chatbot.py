@@ -13,8 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
-from app.models.system_parameter import SystemParameter
-from app.shared.llm import ask_llm
+from app.shared.llm import ask_llm_by_level, get_llm_level
 from app.models.asset import Asset
 from app.models.order_history import OrderHistory
 from app.models.decision_history import DecisionHistory
@@ -505,14 +504,6 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
-async def _get_chatbot_backend() -> str:
-    """DB에서 chatbot_backend 파라미터를 읽는다."""
-    async with async_session() as db:
-        result = await db.execute(
-            select(SystemParameter).where(SystemParameter.key == "chatbot_backend")
-        )
-        param = result.scalar_one_or_none()
-        return param.value if param else "gemini"
 
 
 # ---------------------------------------------------------------------------
@@ -562,8 +553,9 @@ OPENCLAW_FOLLOWUP_TEMPLATE = """{system_prompt}
 async def _chat_stream_openclaw(
     message: str,
     history: list[dict] | None = None,
+    level: str = "normal",
 ) -> AsyncGenerator[str, None]:
-    """openclaw 기반 챗봇 — 프롬프트로 tool calling 시뮬레이션."""
+    """openclaw/nanobot 기반 챗봇 — 프롬프트로 tool calling 시뮬레이션."""
     history = history or []
 
     now = datetime.now().strftime("%Y년 %m월 %d일 %H시 %M분")
@@ -583,7 +575,7 @@ async def _chat_stream_openclaw(
             message=message,
         )
 
-        response = await ask_llm(prompt, timeout_seconds=120)
+        response = await ask_llm_by_level(level, prompt, timeout_seconds=120)
 
         # tool call JSON 파싱 시도
         tool_call = None
@@ -722,11 +714,11 @@ async def chat_stream(
     message: str,
     history: list[dict] | None = None,
 ) -> AsyncGenerator[str, None]:
-    """백엔드 설정에 따라 Gemini 또는 openclaw로 챗봇 스트리밍."""
-    backend = await _get_chatbot_backend()
-    if backend == "openclaw":
-        async for chunk in _chat_stream_openclaw(message, history):
+    """백엔드 설정에 따라 Gemini 또는 openclaw/nanobot으로 챗봇 스트리밍."""
+    level = await get_llm_level("llm_chatbot", "gemini")
+    if level == "gemini":
+        async for chunk in _chat_stream_gemini(message, history):
             yield chunk
     else:
-        async for chunk in _chat_stream_gemini(message, history):
+        async for chunk in _chat_stream_openclaw(message, history, level=level):
             yield chunk

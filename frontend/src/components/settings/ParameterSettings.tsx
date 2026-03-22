@@ -83,13 +83,41 @@ const PARAMETER_META: Record<string, ParameterMeta> = {
     min: 10,
     max: 600,
   },
-  chatbot_backend: {
-    label: "챗봇 LLM 백엔드",
+  llm_trading: {
+    label: "트레이딩 판단 모델",
     unit: "-",
     type: "select",
     options: [
+      { value: "normal", label: "normal (openclaw)" },
+      { value: "high", label: "high (nanobot)" },
+    ],
+  },
+  llm_review: {
+    label: "회고 모델",
+    unit: "-",
+    type: "select",
+    options: [
+      { value: "normal", label: "normal (openclaw)" },
+      { value: "high", label: "high (nanobot)" },
+    ],
+  },
+  llm_news: {
+    label: "뉴스 요약 모델",
+    unit: "-",
+    type: "select",
+    options: [
+      { value: "normal", label: "normal (openclaw)" },
+      { value: "high", label: "high (nanobot)" },
+    ],
+  },
+  llm_chatbot: {
+    label: "챗봇 모델",
+    unit: "-",
+    type: "select",
+    options: [
+      { value: "normal", label: "normal (openclaw)" },
+      { value: "high", label: "high (nanobot)" },
       { value: "gemini", label: "Gemini API" },
-      { value: "openclaw", label: "openclaw" },
     ],
   },
 };
@@ -98,12 +126,16 @@ interface ParameterSettingsProps {
   isEditing: boolean;
   onEditToggle: (editing: boolean) => void;
   onDirtyChange: (dirty: boolean) => void;
+  filterKeys?: (key: string) => boolean;
+  title?: string;
 }
 
 export default function ParameterSettings({
   isEditing,
   onEditToggle,
   onDirtyChange,
+  filterKeys,
+  title = "시스템 파라미터",
 }: ParameterSettingsProps) {
   const { isLoggedIn } = useAuth();
   const navigate = useNavigate();
@@ -116,7 +148,8 @@ export default function ParameterSettings({
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  const items = data?.items ?? [];
+  const allItems = data?.items ?? [];
+  const items = filterKeys ? allItems.filter((item) => filterKeys(item.key)) : allItems;
 
   // 편집 모드 진입 시 현재 값으로 초기화
   useEffect(() => {
@@ -243,7 +276,7 @@ export default function ParameterSettings({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium">시스템 파라미터</h3>
+        <h3 className="text-lg font-medium">{title}</h3>
         {!isEditing && (
           <Button variant="outline" size="sm" onClick={handleEditClick}>
             편집
