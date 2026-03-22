@@ -34,7 +34,7 @@ from app.services.asset_manager import (
     get_open_position,
 )
 from app.shared.json_helpers import normalize_trade_decision, parse_llm_json_object
-from app.shared.llm import ask_llm
+from app.shared.llm import ask_llm_high as ask_llm
 from app.shared.telegram import send_message as send_telegram
 
 logger = logging.getLogger(__name__)
