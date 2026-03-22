@@ -28,10 +28,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "react-router-dom";
 
 // 파라미터 메타데이터 (한글 레이블, 단위, 범위)
-const PARAMETER_META: Record<
-  string,
-  { label: string; unit: string; type: "int" | "time"; min: number | string; max: number | string }
-> = {
+type ParameterMeta =
+  | { label: string; unit: string; type: "int"; min: number; max: number }
+  | { label: string; unit: string; type: "time"; min: string; max: string }
+  | { label: string; unit: string; type: "select"; options: { value: string; label: string }[] };
+
+const PARAMETER_META: Record<string, ParameterMeta> = {
   trading_interval: {
     label: "트레이딩 사이클 간격",
     unit: "초",
@@ -80,6 +82,15 @@ const PARAMETER_META: Record<
     type: "int",
     min: 10,
     max: 600,
+  },
+  chatbot_backend: {
+    label: "챗봇 LLM 백엔드",
+    unit: "-",
+    type: "select",
+    options: [
+      { value: "gemini", label: "Gemini API" },
+      { value: "openclaw", label: "openclaw" },
+    ],
   },
 };
 
@@ -288,7 +299,21 @@ export default function ParameterSettings({
                   <TableCell>
                     {isEditing ? (
                       <div className="space-y-1">
-                        {meta?.type === "time" ? (
+                        {meta?.type === "select" ? (
+                          <select
+                            value={editValues[item.key] ?? item.value}
+                            onChange={(e) =>
+                              handleValueChange(item.key, e.target.value)
+                            }
+                            className="border-input bg-background ring-ring w-40 rounded-md border px-3 py-2 text-sm focus-visible:ring-1 focus-visible:outline-none"
+                          >
+                            {meta.options.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : meta?.type === "time" ? (
                           <Input
                             type="time"
                             value={editValues[item.key] ?? item.value}
@@ -305,8 +330,8 @@ export default function ParameterSettings({
                             onChange={(e) =>
                               handleValueChange(item.key, e.target.value)
                             }
-                            min={meta?.min as number}
-                            max={meta?.max as number}
+                            min={meta && "min" in meta ? (meta.min as number) : undefined}
+                            max={meta && "max" in meta ? (meta.max as number) : undefined}
                             className="w-32"
                             aria-invalid={!!errors[item.key]}
                           />
@@ -318,7 +343,11 @@ export default function ParameterSettings({
                         )}
                       </div>
                     ) : (
-                      <span className="font-mono">{item.value}</span>
+                      <span className="font-mono">
+                        {meta?.type === "select"
+                          ? meta.options.find((o) => o.value === item.value)?.label ?? item.value
+                          : item.value}
+                      </span>
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">

@@ -1,4 +1,4 @@
-"""챗봇 서비스 — OpenAI LLM 연동 + Function Calling + SSE 스트리밍."""
+"""챗봇 서비스 — Gemini API / openclaw 듀얼 백엔드 + Function Calling + SSE 스트리밍."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
+from app.models.system_parameter import SystemParameter
+from app.shared.llm import ask_llm
 from app.models.asset import Asset
 from app.models.order_history import OrderHistory
 from app.models.decision_history import DecisionHistory
@@ -503,17 +505,147 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
-async def chat_stream(
+async def _get_chatbot_backend() -> str:
+    """DB에서 chatbot_backend 파라미터를 읽는다."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(SystemParameter).where(SystemParameter.key == "chatbot_backend")
+        )
+        param = result.scalar_one_or_none()
+        return param.value if param else "gemini"
+
+
+# ---------------------------------------------------------------------------
+# openclaw 용 tool 설명 텍스트
+# ---------------------------------------------------------------------------
+
+TOOL_DESCRIPTIONS = """사용 가능한 함수:
+- get_assets(): 현재 보유 자산 조회 (현금 + 보유종목)
+- get_order_history(stock_code?, start_date?, end_date?, limit?): 매매 주문 이력 조회
+- get_decision_history(stock_code?, start_date?, end_date?, limit?): LLM 판단 이력 조회
+- get_market_snapshot(stock_code): 종목 최신 시장 정보 조회
+- get_news(stock_code?, start_date?, end_date?, limit?): 뉴스 조회
+- get_dart_disclosures(stock_code?, start_date?, end_date?, limit?): DART 공시 조회
+- get_minute_candles(stock_code, start_datetime?, end_datetime?, limit?): 분봉 데이터 조회
+
+날짜 형식: YYYY-MM-DD, 일시 형식: YYYY-MM-DD HH:MM:SS"""
+
+OPENCLAW_PROMPT_TEMPLATE = """{system_prompt}
+
+{tool_descriptions}
+
+## 규칙
+1. 질문에 답하기 위해 데이터 조회가 필요하면, 반드시 아래 JSON 형식으로만 응답해:
+{{"tool": "함수명", "args": {{"파라미터": "값"}}}}
+2. 데이터 조회가 필요 없으면 일반 텍스트로 답변해.
+3. 한번에 하나의 함수만 호출해.
+
+## 대화 이력
+{history_text}
+
+## 사용자 질문
+{message}"""
+
+OPENCLAW_FOLLOWUP_TEMPLATE = """{system_prompt}
+
+## 대화 이력
+{history_text}
+
+## 함수 호출 결과
+함수: {tool_name}
+결과:
+{tool_result}
+
+위 결과를 바탕으로 사용자의 질문에 한국어로 답변해주세요. 마크다운 형식을 사용할 수 있습니다."""
+
+
+async def _chat_stream_openclaw(
     message: str,
     history: list[dict] | None = None,
 ) -> AsyncGenerator[str, None]:
-    """LLM 기반 챗봇 SSE 스트리밍.
+    """openclaw 기반 챗봇 — 프롬프트로 tool calling 시뮬레이션."""
+    history = history or []
 
-    1. 사용자 질문 수신
-    2. 시스템 프롬프트 + 사용자 질문 + 대화 이력을 LLM에 전달
-    3. LLM이 tool call을 반환하면 -> 해당 도구 실행 -> 결과를 다시 LLM에 전달
-    4. LLM이 최종 답변 생성 -> SSE로 스트리밍 반환
-    """
+    now = datetime.now().strftime("%Y년 %m월 %d일 %H시 %M분")
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(now=now)
+
+    history_text = ""
+    for h in history:
+        role = "사용자" if h["role"] == "user" else "어시스턴트"
+        history_text += f"{role}: {h['content']}\n"
+
+    try:
+        # 1차 호출: tool call 여부 판단
+        prompt = OPENCLAW_PROMPT_TEMPLATE.format(
+            system_prompt=system_prompt,
+            tool_descriptions=TOOL_DESCRIPTIONS,
+            history_text=history_text or "(없음)",
+            message=message,
+        )
+
+        response = await ask_llm(prompt, timeout_seconds=120)
+
+        # tool call JSON 파싱 시도
+        tool_call = None
+        try:
+            # 응답에서 JSON 부분 추출
+            stripped = response.strip()
+            if stripped.startswith("{"):
+                parsed = json.loads(stripped)
+                if "tool" in parsed:
+                    tool_call = parsed
+            elif "```json" in stripped:
+                json_str = stripped.split("```json")[1].split("```")[0].strip()
+                parsed = json.loads(json_str)
+                if "tool" in parsed:
+                    tool_call = parsed
+            elif "```" in stripped:
+                json_str = stripped.split("```")[1].split("```")[0].strip()
+                parsed = json.loads(json_str)
+                if "tool" in parsed:
+                    tool_call = parsed
+        except (json.JSONDecodeError, IndexError, KeyError):
+            pass
+
+        if tool_call:
+            fn_name = tool_call["tool"]
+            fn_args = tool_call.get("args", {})
+            logger.info("Tool call (openclaw): %s(%s)", fn_name, fn_args)
+
+            tool_result = await _call_tool(fn_name, fn_args)
+
+            # 2차 호출: tool 결과를 바탕으로 답변 생성
+            followup_prompt = OPENCLAW_FOLLOWUP_TEMPLATE.format(
+                system_prompt=system_prompt,
+                history_text=history_text + f"사용자: {message}\n",
+                tool_name=fn_name,
+                tool_result=tool_result,
+            )
+
+            response = await ask_llm_high(followup_prompt, timeout_seconds=120)
+
+        # 응답을 한 번에 전송 (openclaw는 스트리밍 미지원)
+        data = json.dumps(
+            {"type": "token", "content": response},
+            ensure_ascii=False,
+        )
+        yield f"data: {data}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    except Exception:
+        logger.exception("Chat stream error (openclaw)")
+        error_data = json.dumps(
+            {"type": "error", "content": "답변을 생성하지 못했습니다."},
+            ensure_ascii=False,
+        )
+        yield f"data: {error_data}\n\n"
+
+
+async def _chat_stream_gemini(
+    message: str,
+    history: list[dict] | None = None,
+) -> AsyncGenerator[str, None]:
+    """Gemini API 기반 챗봇 — OpenAI 호환 API + tool calling."""
     client = _get_client()
     history = history or []
 
@@ -584,3 +716,17 @@ async def chat_stream(
             ensure_ascii=False,
         )
         yield f"data: {error_data}\n\n"
+
+
+async def chat_stream(
+    message: str,
+    history: list[dict] | None = None,
+) -> AsyncGenerator[str, None]:
+    """백엔드 설정에 따라 Gemini 또는 openclaw로 챗봇 스트리밍."""
+    backend = await _get_chatbot_backend()
+    if backend == "openclaw":
+        async for chunk in _chat_stream_openclaw(message, history):
+            yield chunk
+    else:
+        async for chunk in _chat_stream_gemini(message, history):
+            yield chunk

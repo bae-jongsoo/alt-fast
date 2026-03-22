@@ -35,6 +35,7 @@ DEFAULT_PARAMETERS: dict[str, str] = {
     "news_count": "10",
     "dart_interval": "600",
     "market_snapshot_interval": "60",
+    "chatbot_backend": "gemini",
 }
 
 PARAMETER_RULES: dict[str, dict] = {
@@ -45,6 +46,7 @@ PARAMETER_RULES: dict[str, dict] = {
     "news_count": {"min": 1, "max": 50, "type": "int"},
     "dart_interval": {"min": 60, "max": 7200, "type": "int"},
     "market_snapshot_interval": {"min": 10, "max": 600, "type": "int"},
+    "chatbot_backend": {"options": ["gemini", "openclaw"], "type": "select"},
 }
 
 # 프롬프트 필수 변수 목록
@@ -107,6 +109,13 @@ def _validate_parameter(key: str, value: str) -> None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"{key}는 {rule['min']}~{rule['max']} 범위여야 합니다.",
+            )
+
+    elif rule["type"] == "select":
+        if value not in rule["options"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{key}는 {rule['options']} 중 하나여야 합니다.",
             )
 
 
