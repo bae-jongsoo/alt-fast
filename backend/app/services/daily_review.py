@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.database import async_session
 from app.models.decision_history import DecisionHistory
 from app.models.order_history import OrderHistory
-from app.shared.llm import ask_llm
+from app.shared.llm import ask_llm_high
 from app.shared.telegram import send_message
 
 KST = ZoneInfo("Asia/Seoul")
@@ -159,7 +159,7 @@ async def generate_and_send_daily_review(target_date: datetime, dry_run: bool = 
     bundle = await fetch_daily_bundle(target_date)
     prompt = build_daily_review_prompt(bundle)
 
-    review_text = await ask_llm(prompt, timeout_seconds=120)
+    review_text = await ask_llm_high(prompt, timeout_seconds=120)
     if len(review_text) > 3500:
         review_text = review_text[:3500] + "\n…(truncated)"
 
