@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 
+COMMISSION_RATE = Decimal("0.00015")      # 증권사 수수료 0.015% (매수/매도 각각)
+TRANSACTION_TAX_RATE = Decimal("0.002")   # 증권거래세 0.2% (매도 시에만, KOSPI)
+
 
 async def get_cash_asset(db: AsyncSession) -> Asset:
     """현금 자산(stock_code IS NULL) 단일 행을 반환한다."""
@@ -41,18 +44,20 @@ async def apply_virtual_buy(
     price: Decimal,
     quantity: int,
 ) -> tuple[Asset, Asset]:
-    """가상 매수: 현금 차감 + 포지션 생성/추가."""
+    """가상 매수: 현금 차감(수수료 포함) + 포지션 생성/추가."""
     buy_amount = price * quantity
+    commission = buy_amount * COMMISSION_RATE
+    total_deduct = buy_amount + commission
 
     cash = await get_cash_asset(db)
     position = await get_open_position(db)
 
     if position is not None and position.stock_code != stock_code:
         raise ValueError("다른 종목을 이미 보유 중입니다")
-    if Decimal(str(cash.total_amount)) < buy_amount:
-        raise ValueError("현금이 부족합니다")
+    if Decimal(str(cash.total_amount)) < total_deduct:
+        raise ValueError("현금이 부족합니다 (수수료 포함)")
 
-    cash.total_amount = float(Decimal(str(cash.total_amount)) - buy_amount)
+    cash.total_amount = float(Decimal(str(cash.total_amount)) - total_deduct)
     cash.unit_price = cash.total_amount
 
     if position is None:
@@ -81,8 +86,11 @@ async def apply_virtual_sell(
     price: Decimal,
     quantity: int,
 ) -> tuple[Asset, Asset]:
-    """가상 매도: 현금 증가 + 포지션 감소/삭제."""
+    """가상 매도: 현금 증가(수수료+거래세 차감) + 포지션 감소/삭제."""
     sell_amount = price * quantity
+    commission = sell_amount * COMMISSION_RATE
+    tax = sell_amount * TRANSACTION_TAX_RATE
+    net_receive = sell_amount - commission - tax
 
     cash = await get_cash_asset(db)
     position = await get_open_position(db)
@@ -92,7 +100,7 @@ async def apply_virtual_sell(
     if quantity > position.quantity:
         raise ValueError("보유 수량을 초과해 매도할 수 없습니다")
 
-    cash.total_amount = float(Decimal(str(cash.total_amount)) + sell_amount)
+    cash.total_amount = float(Decimal(str(cash.total_amount)) + net_receive)
     cash.unit_price = cash.total_amount
 
     remaining_quantity = position.quantity - quantity

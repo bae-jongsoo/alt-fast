@@ -13,6 +13,8 @@ class OrderHistoryItem(BaseModel):
     quantity: int
     total_amount: float
     profit_loss: float | None
+    profit_rate: float | None
+    profit_rate_net: float | None
     decision_history_id: int | None
 
 

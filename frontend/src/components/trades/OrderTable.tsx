@@ -9,7 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDateTimeFull } from "@/lib/format";
+import { formatCurrency, formatDateTimeFull, formatPercent } from "@/lib/format";
 import type { OrderHistoryItem } from "@/hooks/useTrades";
 import { AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -62,13 +62,15 @@ export default function OrderTable({
             <TableHead className="text-right">수량</TableHead>
             <TableHead className="text-right">총액</TableHead>
             <TableHead className="text-right">손익</TableHead>
+            <TableHead className="text-right">수익률</TableHead>
+            <TableHead className="text-right">수익률(세후)</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading
             ? Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 7 }).map((_, j) => (
+                  {Array.from({ length: 9 }).map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -78,7 +80,7 @@ export default function OrderTable({
             : items.length === 0
               ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
                     조건에 맞는 이력이 없습니다. 필터를 조정해보세요.
                   </TableCell>
                 </TableRow>
@@ -144,6 +146,40 @@ export default function OrderTable({
                           >
                             {order.profit_loss > 0 ? "+" : ""}
                             {formatCurrency(order.profit_loss)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        {order.order_type === "BUY" || order.profit_rate == null ? (
+                          <span className="text-muted-foreground">-</span>
+                        ) : (
+                          <span
+                            className={
+                              order.profit_rate > 0
+                                ? "text-red-600 dark:text-red-400"
+                                : order.profit_rate < 0
+                                  ? "text-blue-600 dark:text-blue-400"
+                                  : "text-muted-foreground"
+                            }
+                          >
+                            {formatPercent(order.profit_rate)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        {order.order_type === "BUY" || order.profit_rate_net == null ? (
+                          <span className="text-muted-foreground">-</span>
+                        ) : (
+                          <span
+                            className={
+                              order.profit_rate_net > 0
+                                ? "text-red-600 dark:text-red-400"
+                                : order.profit_rate_net < 0
+                                  ? "text-blue-600 dark:text-blue-400"
+                                  : "text-muted-foreground"
+                            }
+                          >
+                            {formatPercent(order.profit_rate_net)}
                           </span>
                         )}
                       </TableCell>

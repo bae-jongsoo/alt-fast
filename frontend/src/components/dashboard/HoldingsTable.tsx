@@ -61,6 +61,7 @@ export default function HoldingsTable({ data, isLoading }: HoldingsTableProps) {
                 <TableHead className="text-right">현재가</TableHead>
                 <TableHead className="text-right">평가손익</TableHead>
                 <TableHead className="text-right">수익률</TableHead>
+                <TableHead className="text-right">수익률(세후)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -87,6 +88,11 @@ export default function HoldingsTable({ data, isLoading }: HoldingsTableProps) {
                     className={`text-right ${pnlColor(h.profit_rate)}`}
                   >
                     {formatPercent(h.profit_rate)}
+                  </TableCell>
+                  <TableCell
+                    className={`text-right ${pnlColor(h.profit_rate_net)}`}
+                  >
+                    {formatPercent(h.profit_rate_net)}
                   </TableCell>
                 </TableRow>
               ))}

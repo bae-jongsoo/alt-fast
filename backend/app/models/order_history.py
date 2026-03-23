@@ -24,6 +24,8 @@ class OrderHistory(Base):
     result_total_amount: Mapped[float] = mapped_column(Numeric(20, 2))
     profit_loss: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)
     profit_rate: Mapped[float | None] = mapped_column(nullable=True)
+    profit_loss_net: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)
+    profit_rate_net: Mapped[float | None] = mapped_column(nullable=True)
     order_placed_at: Mapped[datetime] = mapped_column(server_default=func.now())
     result_executed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

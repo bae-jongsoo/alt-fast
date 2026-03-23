@@ -49,6 +49,8 @@ KST = timezone(timedelta(hours=9))
 DECISION_ALLOWED_RESULTS = {"BUY", "SELL", "HOLD"}
 _jinja_env = Environment(loader=BaseLoader(), keep_trailing_newline=True)
 RECENT_TRADE_LOOKBACK_MINUTES = 5
+COMMISSION_RATE = Decimal("0.00015")      # 증권사 수수료 0.015% (매수/매도 각각)
+TRANSACTION_TAX_RATE = Decimal("0.002")   # 증권거래세 0.2% (매도 시에만, KOSPI)
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +378,14 @@ async def execute_sell(
     order_total_amount = price * quantity
     profit_loss = (price - avg_buy_price) * quantity
     profit_rate = float((price - avg_buy_price) / avg_buy_price * 100) if avg_buy_price > 0 else 0.0
+
+    # 세후 손익: 수수료(매수+매도) + 거래세(매도)
+    buy_cost = avg_buy_price * quantity
+    sell_cost = price * quantity
+    total_fee = buy_cost * COMMISSION_RATE + sell_cost * COMMISSION_RATE + sell_cost * TRANSACTION_TAX_RATE
+    profit_loss_net = profit_loss - total_fee
+    profit_rate_net = float(profit_loss_net / buy_cost * 100) if buy_cost > 0 else 0.0
+
     executed_at = datetime.now()
 
     await apply_virtual_sell(db, stock_code, price, quantity)
@@ -393,6 +403,8 @@ async def execute_sell(
         result_total_amount=float(order_total_amount),
         profit_loss=float(profit_loss),
         profit_rate=profit_rate,
+        profit_loss_net=float(profit_loss_net),
+        profit_rate_net=profit_rate_net,
         order_placed_at=executed_at,
         result_executed_at=executed_at,
     )
@@ -704,6 +716,12 @@ def _format_order_log(
         lines.append(f"자산가치: 현금 {cash_amount}")
         if profit_loss is not None:
             lines.append(f"손익: {profit_loss:+}")
+        if order.profit_rate is not None:
+            lines.append(f"수익률: {order.profit_rate:+.2f}%")
+        if order.profit_loss_net is not None:
+            lines.append(f"손익(세후): {float(order.profit_loss_net):+}")
+        if order.profit_rate_net is not None:
+            lines.append(f"수익률(세후): {order.profit_rate_net:+.2f}%")
     return "\n".join(lines)
 
 

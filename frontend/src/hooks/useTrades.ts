@@ -13,6 +13,8 @@ export interface OrderHistoryItem {
   quantity: number;
   total_amount: number;
   profit_loss: number | null;
+  profit_rate: number | null;
+  profit_rate_net: number | null;
   decision_history_id: number | null;
 }
 

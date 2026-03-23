@@ -22,6 +22,7 @@ class HoldingStock(BaseModel):
     current_price: float
     eval_pnl: float
     profit_rate: float
+    profit_rate_net: float
 
 
 class SystemStatus(BaseModel):
@@ -47,6 +48,8 @@ class RecentOrder(BaseModel):
     order_price: float
     quantity: int
     profit_loss: float | None
+    profit_rate: float | None
+    profit_rate_net: float | None
 
 
 class RecentError(BaseModel):

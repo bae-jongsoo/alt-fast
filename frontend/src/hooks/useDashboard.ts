@@ -20,6 +20,7 @@ export interface HoldingStock {
   current_price: number;
   eval_pnl: number;
   profit_rate: number;
+  profit_rate_net: number;
 }
 
 export interface SystemStatusItem {
@@ -45,6 +46,8 @@ export interface RecentOrder {
   order_price: number;
   quantity: number;
   profit_loss: number | null;
+  profit_rate: number | null;
+  profit_rate_net: number | null;
 }
 
 export interface RecentError {

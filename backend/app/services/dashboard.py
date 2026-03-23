@@ -1,6 +1,10 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 KST = timezone(timedelta(hours=9))
+
+COMMISSION_RATE = Decimal("0.00015")      # 0.015%
+TRANSACTION_TAX_RATE = Decimal("0.002")   # 0.2%
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -115,6 +119,12 @@ async def _get_holdings(db: AsyncSession) -> list[HoldingStock]:
         avg_price = float(h.unit_price)
         eval_pnl = (current_price - avg_price) * h.quantity if avg_price > 0 else 0.0
         profit_rate = ((current_price - avg_price) / avg_price * 100) if avg_price > 0 else 0.0
+        # 세후 수익률: 매수 수수료 + 매도 수수료 + 거래세
+        buy_cost = Decimal(str(avg_price)) * h.quantity
+        sell_cost = Decimal(str(current_price)) * h.quantity
+        total_fee = buy_cost * COMMISSION_RATE + sell_cost * COMMISSION_RATE + sell_cost * TRANSACTION_TAX_RATE
+        profit_loss_net = Decimal(str(eval_pnl)) - total_fee
+        profit_rate_net = float(profit_loss_net / buy_cost * 100) if buy_cost > 0 else 0.0
         items.append(HoldingStock(
             stock_code=h.stock_code,
             stock_name=h.stock_name or "",
@@ -123,6 +133,7 @@ async def _get_holdings(db: AsyncSession) -> list[HoldingStock]:
             current_price=current_price,
             eval_pnl=eval_pnl,
             profit_rate=round(profit_rate, 2),
+            profit_rate_net=round(profit_rate_net, 2),
         ))
     return items
 
@@ -205,6 +216,8 @@ async def _get_recent_orders(db: AsyncSession) -> list[RecentOrder]:
             order_price=float(o.order_price),
             quantity=o.order_quantity,
             profit_loss=float(o.profit_loss) if o.profit_loss is not None else None,
+            profit_rate=float(o.profit_rate) if o.profit_rate is not None else None,
+            profit_rate_net=float(o.profit_rate_net) if o.profit_rate_net is not None else None,
         )
         for o in orders
     ]
