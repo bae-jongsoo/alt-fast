@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Index, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, Index, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -16,7 +16,7 @@ class MinuteCandle(Base):
     high: Mapped[int] = mapped_column()
     low: Mapped[int] = mapped_column()
     close: Mapped[int] = mapped_column()
-    volume: Mapped[int] = mapped_column()
+    volume: Mapped[int] = mapped_column(BigInteger)
 
     __table_args__ = (
         UniqueConstraint("stock_code", "minute_at", name="uq_minute_candles_stock_code_minute_at"),

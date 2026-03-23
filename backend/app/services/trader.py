@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+from jinja2 import BaseLoader, Environment
 from sqlalchemy import select, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,7 @@ from app.models.dart_disclosure import DartDisclosure
 from app.models.decision_history import DecisionHistory
 from app.models.market_snapshot import MarketSnapshot
 from app.models.minute_candle import MinuteCandle
+from app.services.ws_collector import build_candles
 from app.models.news import News
 from app.models.order_history import OrderHistory
 from app.models.prompt_template import PromptTemplate
@@ -37,9 +39,15 @@ from app.shared.json_helpers import normalize_trade_decision, parse_llm_json_obj
 from app.shared.llm import ask_llm_by_level, get_llm_level
 from app.shared.telegram import send_message as send_telegram
 
-logger = logging.getLogger(__name__)
+from datetime import timezone
 
+logger = logging.getLogger(__name__)
+trade_decision_logger = logging.getLogger("trade_decision")
+order_history_logger = logging.getLogger("order_history")
+
+KST = timezone(timedelta(hours=9))
 DECISION_ALLOWED_RESULTS = {"BUY", "SELL", "HOLD"}
+_jinja_env = Environment(loader=BaseLoader(), keep_trailing_newline=True)
 RECENT_TRADE_LOOKBACK_MINUTES = 5
 
 
@@ -195,7 +203,7 @@ async def build_buy_prompt(
             "  새로운 모멘텀이나 명확히 다른 진입 근거가 없다면 해당 종목은 HOLD하세요.\n"
         )
 
-    prompt = template.content.format(
+    prompt = _jinja_env.from_string(template.content).render(
         current_time=current_time.isoformat(),
         cash_amount=cash.total_amount,
         stock_contexts=stock_contexts_json,
@@ -228,7 +236,7 @@ async def build_sell_prompt(
     buy_reason = await _get_buy_reason(db, stock_code)
     stock_context_json = json.dumps(stock_context, ensure_ascii=False, default=_json_default, indent=2)
 
-    prompt = template.content.format(
+    prompt = _jinja_env.from_string(template.content).render(
         current_time=current_time.isoformat(),
         stock_code=stock_code,
         stock_name=stock_name,
@@ -281,6 +289,7 @@ async def record_decision_history(
         "판단 기록: id=%s result=%s stock_code=%s processing_time_ms=%s error=%s",
         history.id, result, stock_code, processing_time_ms, error_message,
     )
+    trade_decision_logger.info(_format_decision_log(history, parsed_decision))
     return history
 
 
@@ -335,6 +344,12 @@ async def execute_buy(
         "매수 실행: order_id=%s stock=%s price=%s qty=%s total=%s",
         order.id, stock_code, price, quantity, order_total_amount,
     )
+    cash = await get_cash_asset(db)
+    cash_amount = Decimal(str(cash.total_amount)) if cash else Decimal(0)
+    stock_value = price * quantity
+    order_history_logger.info(
+        _format_order_log(order, decision_history, cash_amount, stock_value=stock_value)
+    )
     return order
 
 
@@ -387,6 +402,11 @@ async def execute_sell(
     logger.info(
         "매도 실행: order_id=%s stock=%s price=%s qty=%s total=%s profit_loss=%s",
         order.id, stock_code, price, quantity, order_total_amount, profit_loss,
+    )
+    cash = await get_cash_asset(db)
+    cash_amount = Decimal(str(cash.total_amount)) if cash else Decimal(0)
+    order_history_logger.info(
+        _format_order_log(order, decision_history, cash_amount, profit_loss=profit_loss)
     )
     return order
 
@@ -457,14 +477,8 @@ async def _build_stock_prompt_context(
     )
     news_items = list(news_result.scalars().all())
 
-    # 분봉 (최근 30건)
-    candle_result = await db.execute(
-        select(MinuteCandle)
-        .where(MinuteCandle.stock_code == stock_code)
-        .order_by(desc(MinuteCandle.minute_at))
-        .limit(30)
-    )
-    candles = list(candle_result.scalars().all())
+    # 분봉: Redis 틱 데이터에서 분봉 생성 후 DB 저장
+    candles = await build_candles(db, stock_code, minutes=30)
 
     if market_snapshot is None:
         logger.warning("시장 스냅샷 없음 stock_code=%s", stock_code)
@@ -623,6 +637,74 @@ def _to_iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.isoformat()
+
+
+def _to_kst_str(dt: datetime) -> str:
+    return dt.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _format_decision_log(history: DecisionHistory, parsed_decision: dict) -> str:
+    decision = parsed_decision.get("decision", {})
+    lines = [
+        "---",
+        f"created_at: {_to_kst_str(history.created_at)}",
+        f"result: {history.decision}",
+    ]
+    if history.decision != "HOLD":
+        lines.append(f"stock_code: {decision.get('stock_code')}")
+        lines.append(f"quantity: {decision.get('quantity')}")
+        lines.append(f"price: {decision.get('price')}")
+    lines.append(f"processing_time_ms: {history.processing_time_ms}")
+    if history.is_error:
+        lines.append(f"error: {history.error_message}")
+    analysis = parsed_decision.get("analysis")
+    if analysis:
+        lines.append("analysis:")
+        for item in analysis:
+            stock_code = item.get("stock_code")
+            lines.append(f"  - stock_code: {stock_code}")
+            if item.get("stock_name"):
+                lines.append(f"    stock_name: {item['stock_name']}")
+            if item.get("confidence") is not None:
+                lines.append(f"    confidence: {item['confidence']}")
+    return "\n".join(lines)
+
+
+def _format_order_log(
+    order: OrderHistory,
+    decision_history: DecisionHistory,
+    cash_amount: Decimal,
+    stock_value: Decimal | None = None,
+    profit_loss: Decimal | None = None,
+) -> str:
+    lines = [
+        "---",
+        f"created_at: {_to_kst_str(order.created_at)}",
+        f"side: {order.order_type}",
+        f"stock_code: {order.stock_code}",
+    ]
+    if order.stock_name:
+        lines.append(f"stock_name: {order.stock_name}")
+    lines += [
+        f"price: {order.order_price}",
+        f"quantity: {order.order_quantity}",
+        f"total: {order.order_total_amount}",
+    ]
+    parsed = decision_history.parsed_decision
+    analysis = parsed.get("analysis") if isinstance(parsed, dict) else None
+    if analysis:
+        for item in analysis:
+            if item.get("stock_code") == order.stock_code and item.get("reason"):
+                lines.append(f"reason: {item['reason']}")
+                break
+    if order.order_type == "BUY" and stock_value is not None:
+        total = cash_amount + stock_value
+        lines.append(f"자산가치: 현금 {cash_amount} + 주식 {stock_value} = 총 {total}")
+    else:
+        lines.append(f"자산가치: 현금 {cash_amount}")
+        if profit_loss is not None:
+            lines.append(f"손익: {profit_loss:+}")
+    return "\n".join(lines)
 
 
 def _safe_float(value) -> float | None:

@@ -7,6 +7,10 @@ from typing import Optional
 
 import typer
 
+from app.logging_config import configure_logging
+
+configure_logging()
+
 app = typer.Typer(name="alt", help="ALT 한국 주식 자동매매 시스템 CLI")
 
 # ── 서브커맨드 그룹 ──────────────────────────────────────────────
