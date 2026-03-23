@@ -238,12 +238,30 @@ async def build_sell_prompt(
     buy_reason = await _get_buy_reason(db, stock_code)
     stock_context_json = json.dumps(stock_context, ensure_ascii=False, default=_json_default, indent=2)
 
+    # 손익분기가 & 세후 수익률 계산
+    avg_buy = Decimal(str(position.unit_price))
+    fee_rate = COMMISSION_RATE * 2 + TRANSACTION_TAX_RATE  # 0.23%
+    breakeven_price = int(avg_buy * (1 + fee_rate))
+    # 최근 체결가로 세후 수익률 계산
+    current_price = stock_context.get("candles", [{}])[0].get("close") if stock_context.get("candles") else None
+    profit_rate_net = 0.0
+    if current_price and avg_buy > 0:
+        gross = (Decimal(str(current_price)) - avg_buy) / avg_buy
+        profit_rate_net = float((gross - fee_rate) * 100)
+
+    # 매수 시 설정한 target/stop 추출
+    buy_target, buy_stop = await _get_buy_target_stop(db, stock_code)
+
     prompt = _jinja_env.from_string(template.content).render(
         current_time=current_time.isoformat(),
         stock_code=stock_code,
         stock_name=stock_name,
         quantity=position.quantity,
         avg_buy_price=position.unit_price,
+        breakeven_price=breakeven_price,
+        profit_rate_net=round(profit_rate_net, 2),
+        buy_target_pct=buy_target or "N/A",
+        buy_stop_pct=buy_stop or "N/A",
         buy_reason=buy_reason or "",
         stock_contexts=stock_context_json,
     )
@@ -574,6 +592,32 @@ async def _get_buy_reason(db: AsyncSession, stock_code: str) -> str | None:
         if item.get("stock_code") == stock_code and item.get("reason"):
             return item["reason"]
     return None
+
+
+async def _get_buy_target_stop(db: AsyncSession, stock_code: str) -> tuple[float | None, float | None]:
+    """매수 시 설정한 target_return_pct, stop_pct를 반환한다."""
+    result = await db.execute(
+        select(OrderHistory)
+        .where(OrderHistory.stock_code == stock_code)
+        .where(OrderHistory.order_type == "BUY")
+        .order_by(desc(OrderHistory.created_at))
+        .limit(1)
+    )
+    buy_order = result.scalar_one_or_none()
+    if buy_order is None:
+        return None, None
+
+    dh_result = await db.execute(
+        select(DecisionHistory).where(DecisionHistory.id == buy_order.decision_history_id)
+    )
+    dh = dh_result.scalar_one_or_none()
+    if dh is None or not isinstance(dh.parsed_decision, dict):
+        return None, None
+
+    decision = dh.parsed_decision.get("decision", {})
+    target = decision.get("target_return_pct")
+    stop = decision.get("stop_pct")
+    return target, stop
 
 
 def _extract_result(parsed_decision: dict) -> str:
