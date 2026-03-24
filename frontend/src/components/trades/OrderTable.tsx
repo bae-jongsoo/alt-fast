@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Table,
   TableHeader,
@@ -11,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDateTimeFull, formatPercent } from "@/lib/format";
 import type { OrderHistoryItem } from "@/hooks/useTrades";
+import DecisionDetail from "./DecisionDetail";
 import { AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface OrderTableProps {
@@ -21,7 +23,6 @@ interface OrderTableProps {
   isLoading: boolean;
   isError: boolean;
   onPageChange: (page: number) => void;
-  onOrderClick: (decisionHistoryId: number) => void;
   onRetry: () => void;
 }
 
@@ -33,10 +34,17 @@ export default function OrderTable({
   isLoading,
   isError,
   onPageChange,
-  onOrderClick,
   onRetry,
 }: OrderTableProps) {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const handleRowClick = (order: OrderHistoryItem) => {
+    if (order.decision_history_id == null) return;
+    setExpandedId((prev) =>
+      prev === order.decision_history_id ? null : order.decision_history_id
+    );
+  };
 
   if (isError) {
     return (
@@ -87,103 +95,109 @@ export default function OrderTable({
               )
               : items.map((order) => {
                   const hasDecision = order.decision_history_id != null;
+                  const isExpanded = expandedId === order.decision_history_id;
                   return (
-                    <TableRow
-                      key={order.id}
-                      className={
-                        hasDecision
-                          ? "cursor-pointer hover:bg-muted/70"
-                          : ""
-                      }
-                      onClick={() => {
-                        if (hasDecision) {
-                          onOrderClick(order.decision_history_id!);
-                        }
-                      }}
-                    >
-                      <TableCell className="text-xs">
-                        {formatDateTimeFull(new Date(order.created_at))}
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-medium">{order.stock_name}</span>
-                        <span className="text-xs text-muted-foreground ml-1">
-                          ({order.stock_code})
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={order.order_type === "BUY" ? "default" : "destructive"}
-                          className={
-                            order.order_type === "BUY"
-                              ? "bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                              : "bg-red-500/15 text-red-600 dark:text-red-400"
-                          }
-                        >
-                          {order.order_type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {formatCurrency(order.order_price)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {order.quantity.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {formatCurrency(order.total_amount)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {order.order_type === "BUY" || order.profit_loss == null ? (
-                          <span className="text-muted-foreground">-</span>
-                        ) : (
-                          <span
+                    <>
+                      <TableRow
+                        key={order.id}
+                        className={`${
+                          hasDecision
+                            ? "cursor-pointer hover:bg-muted/70"
+                            : ""
+                        } ${isExpanded ? "bg-muted/50" : ""}`}
+                        onClick={() => handleRowClick(order)}
+                      >
+                        <TableCell className="text-xs">
+                          {formatDateTimeFull(new Date(order.created_at))}
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-medium">{order.stock_name}</span>
+                          <span className="text-xs text-muted-foreground ml-1">
+                            ({order.stock_code})
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={order.order_type === "BUY" ? "default" : "destructive"}
                             className={
-                              order.profit_loss > 0
-                                ? "text-red-600 dark:text-red-400"
-                                : order.profit_loss < 0
-                                  ? "text-blue-600 dark:text-blue-400"
-                                  : "text-muted-foreground"
+                              order.order_type === "BUY"
+                                ? "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                                : "bg-red-500/15 text-red-600 dark:text-red-400"
                             }
                           >
-                            {order.profit_loss > 0 ? "+" : ""}
-                            {formatCurrency(order.profit_loss)}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {order.order_type === "BUY" || order.profit_rate == null ? (
-                          <span className="text-muted-foreground">-</span>
-                        ) : (
-                          <span
-                            className={
-                              order.profit_rate > 0
-                                ? "text-red-600 dark:text-red-400"
-                                : order.profit_rate < 0
-                                  ? "text-blue-600 dark:text-blue-400"
-                                  : "text-muted-foreground"
-                            }
-                          >
-                            {formatPercent(order.profit_rate)}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {order.order_type === "BUY" || order.profit_rate_net == null ? (
-                          <span className="text-muted-foreground">-</span>
-                        ) : (
-                          <span
-                            className={
-                              order.profit_rate_net > 0
-                                ? "text-red-600 dark:text-red-400"
-                                : order.profit_rate_net < 0
-                                  ? "text-blue-600 dark:text-blue-400"
-                                  : "text-muted-foreground"
-                            }
-                          >
-                            {formatPercent(order.profit_rate_net)}
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
+                            {order.order_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {formatCurrency(order.order_price)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {order.quantity.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {formatCurrency(order.total_amount)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {order.order_type === "BUY" || order.profit_loss == null ? (
+                            <span className="text-muted-foreground">-</span>
+                          ) : (
+                            <span
+                              className={
+                                order.profit_loss > 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : order.profit_loss < 0
+                                    ? "text-blue-600 dark:text-blue-400"
+                                    : "text-muted-foreground"
+                              }
+                            >
+                              {order.profit_loss > 0 ? "+" : ""}
+                              {formatCurrency(order.profit_loss)}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {order.order_type === "BUY" || order.profit_rate == null ? (
+                            <span className="text-muted-foreground">-</span>
+                          ) : (
+                            <span
+                              className={
+                                order.profit_rate > 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : order.profit_rate < 0
+                                    ? "text-blue-600 dark:text-blue-400"
+                                    : "text-muted-foreground"
+                              }
+                            >
+                              {formatPercent(order.profit_rate)}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {order.order_type === "BUY" || order.profit_rate_net == null ? (
+                            <span className="text-muted-foreground">-</span>
+                          ) : (
+                            <span
+                              className={
+                                order.profit_rate_net > 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : order.profit_rate_net < 0
+                                    ? "text-blue-600 dark:text-blue-400"
+                                    : "text-muted-foreground"
+                              }
+                            >
+                              {formatPercent(order.profit_rate_net)}
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && order.decision_history_id != null && (
+                        <TableRow key={`detail-${order.id}`}>
+                          <TableCell colSpan={9} className="p-0">
+                            <DecisionDetail decisionId={order.decision_history_id} />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
                   );
                 })}
         </TableBody>

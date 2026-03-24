@@ -33,8 +33,6 @@ export default function TradesPage() {
   const [orderPage, setOrderPage] = useState(1);
   const [decisionPage, setDecisionPage] = useState(1);
 
-  // 판단 이력 하이라이트 (주문 이력에서 클릭 시)
-  const [highlightDecisionId, setHighlightDecisionId] = useState<number | null>(null);
 
   // 주문 이력 필터 구성
   const orderFilters: OrderFilters = {
@@ -93,18 +91,10 @@ export default function TradesPage() {
       setSearchParams({ tab }, { replace: true });
       // 탭 전환 시 결과 필터를 "전체"로 리셋
       setResultFilter("all");
-      setHighlightDecisionId(null);
     },
     [setSearchParams]
   );
 
-  // 주문 이력 행 클릭 → 판단 이력 탭으로 이동 + 하이라이트
-  const handleOrderClick = useCallback((decisionHistoryId: number) => {
-    setHighlightDecisionId(decisionHistoryId);
-    setSearchParams({ tab: "decisions" }, { replace: true });
-    setResultFilter("all");
-    setDecisionPage(1);
-  }, []);
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 px-4 py-6">
@@ -136,7 +126,6 @@ export default function TradesPage() {
             isLoading={ordersQuery.isLoading}
             isError={ordersQuery.isError}
             onPageChange={setOrderPage}
-            onOrderClick={handleOrderClick}
             onRetry={() => ordersQuery.refetch()}
           />
         </TabsContent>
@@ -160,7 +149,7 @@ export default function TradesPage() {
             pageSize={20}
             isLoading={decisionsQuery.isLoading}
             isError={decisionsQuery.isError}
-            highlightId={highlightDecisionId}
+            highlightId={null}
             onPageChange={setDecisionPage}
             onRetry={() => decisionsQuery.refetch()}
           />
