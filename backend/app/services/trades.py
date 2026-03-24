@@ -13,6 +13,7 @@ from app.schemas.trades import (
     DecisionHistoryListResponse,
     OrderHistoryItem,
     OrderHistoryListResponse,
+    SourceItem,
 )
 
 
@@ -125,6 +126,23 @@ async def get_decisions(
     )
     items = result.scalars().all()
 
+    def _extract_sources(d: DecisionHistory) -> list[SourceItem] | None:
+        pd = d.parsed_decision
+        if not pd or not isinstance(pd, dict):
+            return None
+        raw = pd.get("decision", {}).get("sources")
+        if not raw or not isinstance(raw, list):
+            return None
+        return [
+            SourceItem(
+                type=s.get("type", ""),
+                weight=s.get("weight", 0),
+                detail=s.get("detail", ""),
+            )
+            for s in raw
+            if isinstance(s, dict)
+        ]
+
     return DecisionHistoryListResponse(
         items=[
             DecisionHistoryItem(
@@ -135,6 +153,7 @@ async def get_decisions(
                 decision=d.decision,
                 is_error=d.is_error,
                 error_message=d.error_message,
+                sources=_extract_sources(d),
             )
             for d in items
         ],

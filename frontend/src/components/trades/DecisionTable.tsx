@@ -88,6 +88,7 @@ export default function DecisionTable({
             <TableHead>일시</TableHead>
             <TableHead>종목</TableHead>
             <TableHead>결과</TableHead>
+            <TableHead>소스</TableHead>
             <TableHead>에러</TableHead>
           </TableRow>
         </TableHeader>
@@ -95,7 +96,7 @@ export default function DecisionTable({
           {isLoading
             ? Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 4 }).map((_, j) => (
+                  {Array.from({ length: 5 }).map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -105,7 +106,7 @@ export default function DecisionTable({
             : items.length === 0
               ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
                     조건에 맞는 이력이 없습니다. 필터를 조정해보세요.
                   </TableCell>
                 </TableRow>
@@ -134,6 +135,26 @@ export default function DecisionTable({
                         <DecisionBadge decision={item.decision} />
                       </TableCell>
                       <TableCell>
+                        {item.sources && item.sources.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {item.sources.map((s, i) => (
+                              <span
+                                key={i}
+                                className="inline-flex items-center text-xs rounded bg-muted px-1.5 py-0.5"
+                                title={s.detail}
+                              >
+                                <span className="font-medium">{s.type}</span>
+                                <span className="text-muted-foreground ml-1">
+                                  {Math.round(s.weight * 100)}%
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {item.is_error ? (
                           <div className="flex items-center gap-1.5">
                             <AlertCircle className="size-4 text-destructive" />
@@ -148,7 +169,7 @@ export default function DecisionTable({
                     </TableRow>
                     {expandedId === item.id && (
                       <TableRow key={`detail-${item.id}`}>
-                        <TableCell colSpan={4} className="p-0">
+                        <TableCell colSpan={5} className="p-0">
                           <DecisionDetail decisionId={item.id} />
                         </TableCell>
                       </TableRow>

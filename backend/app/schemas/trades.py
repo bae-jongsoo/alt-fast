@@ -25,6 +25,12 @@ class OrderHistoryListResponse(BaseModel):
     page_size: int
 
 
+class SourceItem(BaseModel):
+    type: str
+    weight: float
+    detail: str = ""
+
+
 class DecisionHistoryItem(BaseModel):
     id: int
     created_at: datetime
@@ -33,6 +39,7 @@ class DecisionHistoryItem(BaseModel):
     decision: str
     is_error: bool
     error_message: str | None
+    sources: list[SourceItem] | None = None
 
 
 class DecisionDetailResponse(BaseModel):

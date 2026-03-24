@@ -25,6 +25,12 @@ export interface OrderHistoryListResponse {
   page_size: number;
 }
 
+export interface SourceItem {
+  type: string;
+  weight: number;
+  detail: string;
+}
+
 export interface DecisionHistoryItem {
   id: number;
   created_at: string;
@@ -33,6 +39,7 @@ export interface DecisionHistoryItem {
   decision: string;
   is_error: boolean;
   error_message: string | null;
+  sources: SourceItem[] | null;
 }
 
 export interface DecisionHistoryListResponse {
