@@ -256,7 +256,7 @@ async def build_sell_prompt(
     fee_rate = COMMISSION_RATE * 2 + TRANSACTION_TAX_RATE  # 0.23%
     breakeven_price = int(avg_buy * (1 + fee_rate))
     # 최근 체결가로 세후 수익률 계산
-    current_price = stock_context.get("candles", [{}])[0].get("close") if stock_context.get("candles") else None
+    current_price = stock_context["candles"][-1]["close"] if stock_context.get("candles") else None
     profit_rate_net = 0.0
     if current_price and avg_buy > 0:
         gross = (Decimal(str(current_price)) - avg_buy) / avg_buy
