@@ -12,7 +12,7 @@ git pull origin main
 
 echo "=== backend dependencies ==="
 cd "$PROJECT_DIR/backend"
-uv pip install -r requirements.txt --quiet
+uv sync --quiet
 
 echo "=== frontend build ==="
 cd "$PROJECT_DIR/frontend"
