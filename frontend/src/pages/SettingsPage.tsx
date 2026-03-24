@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { usePageTitle } from "@/hooks/use-page-title";
 import {
   Tabs,
@@ -13,7 +14,8 @@ import ParameterSettings from "@/components/settings/ParameterSettings";
 export default function SettingsPage() {
   usePageTitle("ALT | 설정");
 
-  const [activeTab, setActiveTab] = useState("stocks");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") || "stocks";
   const [isDirty, setIsDirty] = useState(false);
   const [stockEditing, setStockEditing] = useState(false);
   const [paramEditing, setParamEditing] = useState(false);
@@ -44,9 +46,9 @@ export default function SettingsPage() {
         setParamEditing(false);
         setModelEditing(false);
       }
-      setActiveTab(tabValue);
+      setSearchParams({ tab: tabValue }, { replace: true });
     },
-    [isDirty]
+    [isDirty, setSearchParams]
   );
 
   const handleDirtyChange = useCallback((dirty: boolean) => {
