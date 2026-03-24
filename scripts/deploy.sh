@@ -6,7 +6,7 @@ SUPERVISOR_CONF="$PROJECT_DIR/supervisord.conf"
 
 # .env에서 텔레그램 설정 로드
 set -a
-source "$PROJECT_DIR/backend/.env" 2>/dev/null || true
+source "$PROJECT_DIR/.env" 2>/dev/null || true
 set +a
 
 send_telegram() {
