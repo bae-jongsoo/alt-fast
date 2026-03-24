@@ -51,6 +51,7 @@ def normalize_trade_decision(payload: dict) -> dict:
     stock_code = decision.get("stock_code", decision.get("종목코드"))
     normalized = dict(payload)
     normalized["decision"] = {
+        **decision,
         "result": result,
         "stock_code": stock_code,
         "quantity": quantity,
