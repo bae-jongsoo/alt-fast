@@ -205,12 +205,25 @@ async def build_buy_prompt(
             "  새로운 모멘텀이나 명확히 다른 진입 근거가 없다면 해당 종목은 HOLD하세요.\n"
         )
 
+    # 오늘 청산 이력 (패턴 반복 방지용)
+    today_closed = await _get_today_closed_trades(db, current_time)
+    today_closed_block = ""
+    if today_closed["trades"]:
+        today_closed_json = json.dumps(today_closed, ensure_ascii=False, default=_json_default, indent=2)
+        today_closed_block = (
+            f"\n<오늘매매이력>\n"
+            f"{today_closed_json}\n"
+            f"</오늘매매이력>\n"
+            "- 위는 오늘 청산 완료된 매매 이력입니다. 손실 패턴을 반복하지 마세요.\n"
+            "  같은 종목·같은 논리로 재진입하려면 명확히 다른 시장 조건이 필요합니다.\n"
+        )
+
     prompt = _jinja_env.from_string(template.content).render(
         current_time=current_time.isoformat(),
         cash_amount=cash.total_amount,
         stock_contexts=stock_contexts_json,
     )
-    return prompt + recent_trades_block
+    return prompt + recent_trades_block + today_closed_block
 
 
 async def build_sell_prompt(
@@ -290,6 +303,11 @@ async def record_decision_history(
     decision_info = parsed_decision.get("decision", {})
     stock_code = str(decision_info.get("stock_code") or "")
     stock_name = str(decision_info.get("stock_name") or "")
+    if not stock_name:
+        for item in parsed_decision.get("analysis", []):
+            if item.get("stock_code") == stock_code and item.get("stock_name"):
+                stock_name = item["stock_name"]
+                break
 
     history = DecisionHistory(
         stock_code=stock_code,
@@ -687,6 +705,89 @@ async def _get_recent_trades(db: AsyncSession, now: datetime) -> list[dict]:
             "reason": reason,
         })
     return trades
+
+
+async def _get_today_closed_trades(db: AsyncSession, now: datetime) -> dict:
+    """오늘 청산(SELL) 완료된 매매 이력을 요약하여 반환한다."""
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    result = await db.execute(
+        select(OrderHistory)
+        .where(OrderHistory.created_at >= today_start)
+        .where(OrderHistory.order_type == "SELL")
+        .order_by(desc(OrderHistory.created_at))
+    )
+    sell_orders = result.scalars().all()
+
+    trades = []
+    wins = 0
+    losses = 0
+    total_pnl = 0.0
+
+    for sell in sell_orders:
+        pnl = float(sell.profit_loss) if sell.profit_loss is not None else 0.0
+        if pnl > 0:
+            wins += 1
+        elif pnl < 0:
+            losses += 1
+        total_pnl += pnl
+
+        # 매수 사유 추출: SELL의 decision_history에서 buy_reason 찾기
+        buy_reason = None
+        sell_reason = None
+
+        # 매도 사유
+        if sell.decision_history_id:
+            dh_result = await db.execute(
+                select(DecisionHistory).where(DecisionHistory.id == sell.decision_history_id)
+            )
+            dh = dh_result.scalar_one_or_none()
+            if dh and isinstance(dh.parsed_decision, dict):
+                for item in dh.parsed_decision.get("analysis", []):
+                    if item.get("stock_code") == sell.stock_code and item.get("reason"):
+                        sell_reason = item["reason"]
+                        break
+
+        # 매수 사유: 같은 종목의 직전 BUY 주문에서 추출
+        buy_result = await db.execute(
+            select(OrderHistory)
+            .where(OrderHistory.stock_code == sell.stock_code)
+            .where(OrderHistory.order_type == "BUY")
+            .where(OrderHistory.created_at < sell.created_at)
+            .order_by(desc(OrderHistory.created_at))
+            .limit(1)
+        )
+        buy_order = buy_result.scalar_one_or_none()
+        buy_price = float(buy_order.order_price) if buy_order else None
+        if buy_order and buy_order.decision_history_id:
+            buy_dh_result = await db.execute(
+                select(DecisionHistory).where(DecisionHistory.id == buy_order.decision_history_id)
+            )
+            buy_dh = buy_dh_result.scalar_one_or_none()
+            if buy_dh and isinstance(buy_dh.parsed_decision, dict):
+                for item in buy_dh.parsed_decision.get("analysis", []):
+                    if item.get("stock_code") == sell.stock_code and item.get("reason"):
+                        buy_reason = item["reason"]
+                        break
+
+        trades.append({
+            "stock_code": sell.stock_code,
+            "stock_name": sell.stock_name or "",
+            "buy_price": buy_price,
+            "sell_price": float(sell.order_price),
+            "pnl": pnl,
+            "buy_reason": buy_reason,
+            "sell_reason": sell_reason,
+        })
+
+    return {
+        "summary": {
+            "total": len(trades),
+            "wins": wins,
+            "losses": losses,
+            "total_pnl": total_pnl,
+        },
+        "trades": trades,
+    }
 
 
 def _to_iso(value: datetime | None) -> str | None:
