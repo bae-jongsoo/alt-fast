@@ -137,7 +137,7 @@ class KisClient:
             "trade_id": f"{stock_code}_{time_kst.isoformat()}",
             "trade_time": time_kst.strftime("%H:%M:%S"),
             "price": int(response.price),
-            "volume": int(response.volume),
+            "volume": int(response.__data__[12]),  # CNTG_VOL 체결 거래량 (건별)
         }
 
     @staticmethod
