@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import TradeFilters, {
@@ -18,8 +19,9 @@ import {
 export default function TradesPage() {
   usePageTitle("ALT | 매매이력");
 
-  // 탭 상태
-  const [activeTab, setActiveTab] = useState<TabType>("orders");
+  // 탭 상태 (URL 파라미터로 유지)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get("tab") as TabType) || "orders";
 
   // 공통 필터 상태
   const [startDate, setStartDate] = useState(getDefaultStartDate);
@@ -88,18 +90,18 @@ export default function TradesPage() {
   const handleTabChange = useCallback(
     (value: unknown) => {
       const tab = value as TabType;
-      setActiveTab(tab);
+      setSearchParams({ tab }, { replace: true });
       // 탭 전환 시 결과 필터를 "전체"로 리셋
       setResultFilter("all");
       setHighlightDecisionId(null);
     },
-    []
+    [setSearchParams]
   );
 
   // 주문 이력 행 클릭 → 판단 이력 탭으로 이동 + 하이라이트
   const handleOrderClick = useCallback((decisionHistoryId: number) => {
     setHighlightDecisionId(decisionHistoryId);
-    setActiveTab("decisions");
+    setSearchParams({ tab: "decisions" }, { replace: true });
     setResultFilter("all");
     setDecisionPage(1);
   }, []);

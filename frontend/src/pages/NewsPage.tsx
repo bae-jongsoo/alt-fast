@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import NewsFilterBar, {
@@ -18,8 +19,9 @@ import {
 export default function NewsPage() {
   usePageTitle("ALT | 뉴스·공시");
 
-  // 탭 상태
-  const [activeTab, setActiveTab] = useState<NewsTabType>("news");
+  // 탭 상태 (URL 파라미터로 유지)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get("tab") as NewsTabType) || "news";
 
   // 공통 필터 상태 (탭 전환 시 유지)
   const [startDate, setStartDate] = useState(getDefaultStartDate);
@@ -89,8 +91,8 @@ export default function NewsPage() {
 
   // 탭 전환 시 필터 상태(종목, 날짜 범위) 유지
   const handleTabChange = useCallback((value: unknown) => {
-    setActiveTab(value as NewsTabType);
-  }, []);
+    setSearchParams({ tab: value as string }, { replace: true });
+  }, [setSearchParams]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 px-4 py-6">
