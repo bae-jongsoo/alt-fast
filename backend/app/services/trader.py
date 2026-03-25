@@ -772,6 +772,8 @@ async def _get_today_closed_trades(db: AsyncSession, now: datetime) -> dict:
         trades.append({
             "stock_code": sell.stock_code,
             "stock_name": sell.stock_name or "",
+            "buy_time": _to_iso(buy_order.created_at) if buy_order else None,
+            "sell_time": _to_iso(sell.created_at),
             "buy_price": buy_price,
             "sell_price": float(sell.order_price),
             "pnl": pnl,
