@@ -180,50 +180,34 @@ async def build_buy_prompt(
     cash = await get_cash_asset(db)
     target_stocks = await _get_target_stocks(db)
 
-    stock_contexts = []
+    # 종목별 <stock-info> 블록 조립
+    stock_infos: list[str] = []
     for ts in target_stocks:
         ctx = await _build_stock_prompt_context(db, ts.stock_code, ts.stock_name, current_time)
-        if ctx is not None:
-            stock_contexts.append(ctx)
+        if ctx is None:
+            continue
+        ctx["today_trades"] = await _get_stock_today_trades(db, ts.stock_code, current_time)
+        data_json = json.dumps(ctx, ensure_ascii=False, default=_json_default, indent=2)
+        stock_infos.append(
+            f'<stock-info name="{ts.stock_name}" code="{ts.stock_code}">\n{data_json}\n</stock-info>'
+        )
 
-    if not stock_contexts:
+    if not stock_infos:
         return None
 
-    stock_contexts_json = json.dumps(stock_contexts, ensure_ascii=False, default=_json_default, indent=2)
+    # 오늘 매매 성적 요약
+    perf = await _get_today_performance(db, current_time)
+    today_performance = (
+        f"{perf['total_closed']} closed, {perf['wins']}W / {perf['losses']}L / "
+        f"{perf['evens']}E, PnL {perf['total_pnl']:+,.0f} KRW"
+    )
 
-    # 최근 거래이력 (왕복매매 방지용)
-    recent_trades = await _get_recent_trades(db, current_time)
-    recent_trades_block = ""
-    if recent_trades:
-        recent_trades_json = json.dumps(recent_trades, ensure_ascii=False, default=_json_default, indent=2)
-        recent_trades_block = (
-            f"\n<최근거래이력>\n"
-            f"{recent_trades_json}\n"
-            f"</최근거래이력>\n"
-            f"- 위 거래는 최근 {RECENT_TRADE_LOOKBACK_MINUTES}분 내 체결된 내역입니다. "
-            "동일 종목을 같은 근거로 재매수하는 것은 왕복 매매이므로 피하세요.\n"
-            "  새로운 모멘텀이나 명확히 다른 진입 근거가 없다면 해당 종목은 HOLD하세요.\n"
-        )
-
-    # 오늘 청산 이력 (패턴 반복 방지용)
-    today_closed = await _get_today_closed_trades(db, current_time)
-    today_closed_block = ""
-    if today_closed["trades"]:
-        today_closed_json = json.dumps(today_closed, ensure_ascii=False, default=_json_default, indent=2)
-        today_closed_block = (
-            f"\n<오늘매매이력>\n"
-            f"{today_closed_json}\n"
-            f"</오늘매매이력>\n"
-            "- 위는 오늘 청산 완료된 매매 이력입니다. 손실 패턴을 반복하지 마세요.\n"
-            "  같은 종목·같은 논리로 재진입하려면 명확히 다른 시장 조건이 필요합니다.\n"
-        )
-
-    prompt = _jinja_env.from_string(template.content).render(
+    return _jinja_env.from_string(template.content).render(
         current_time=current_time.isoformat(),
         cash_amount=cash.total_amount,
-        stock_contexts=stock_contexts_json,
+        today_performance=today_performance,
+        stock_infos=stock_infos,
     )
-    return prompt + recent_trades_block + today_closed_block
 
 
 async def build_sell_prompt(
@@ -807,6 +791,111 @@ async def _get_today_closed_trades(db: AsyncSession, now: datetime) -> dict:
             "total_pnl": total_pnl,
         },
         "trades": trades,
+    }
+
+
+async def _get_stock_today_trades(db: AsyncSession, stock_code: str, now: datetime) -> list[dict]:
+    """BUY 기준으로 해당 종목의 오늘 매매 이력을 조회한다. 미청산 포함."""
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    result = await db.execute(
+        select(OrderHistory)
+        .where(OrderHistory.stock_code == stock_code)
+        .where(OrderHistory.order_type == "BUY")
+        .where(OrderHistory.created_at >= today_start)
+        .order_by(OrderHistory.created_at)
+    )
+    buy_orders = result.scalars().all()
+
+    trades = []
+    for buy in buy_orders:
+        # 매수 사유
+        buy_reason = None
+        if buy.decision_history_id:
+            dh_result = await db.execute(
+                select(DecisionHistory).where(DecisionHistory.id == buy.decision_history_id)
+            )
+            dh = dh_result.scalar_one_or_none()
+            if dh and isinstance(dh.parsed_decision, dict):
+                for item in dh.parsed_decision.get("analysis", []):
+                    if item.get("stock_code") == stock_code and item.get("reason"):
+                        buy_reason = item["reason"]
+                        break
+
+        # 매칭 SELL 조회 (buy_order_id 역조회)
+        sell_result = await db.execute(
+            select(OrderHistory)
+            .where(OrderHistory.buy_order_id == buy.id)
+            .limit(1)
+        )
+        sell = sell_result.scalar_one_or_none()
+
+        # fallback: buy_order_id가 없는 기존 데이터
+        if sell is None:
+            sell_result = await db.execute(
+                select(OrderHistory)
+                .where(OrderHistory.stock_code == stock_code)
+                .where(OrderHistory.order_type == "SELL")
+                .where(OrderHistory.created_at > buy.created_at)
+                .order_by(OrderHistory.created_at)
+                .limit(1)
+            )
+            sell = sell_result.scalar_one_or_none()
+
+        sell_reason = None
+        if sell and sell.decision_history_id:
+            sell_dh_result = await db.execute(
+                select(DecisionHistory).where(DecisionHistory.id == sell.decision_history_id)
+            )
+            sell_dh = sell_dh_result.scalar_one_or_none()
+            if sell_dh and isinstance(sell_dh.parsed_decision, dict):
+                for item in sell_dh.parsed_decision.get("analysis", []):
+                    if item.get("stock_code") == stock_code and item.get("reason"):
+                        sell_reason = item["reason"]
+                        break
+
+        trades.append({
+            "buy_time": buy.created_at.strftime("%H:%M"),
+            "buy_price": float(buy.order_price),
+            "sell_time": sell.created_at.strftime("%H:%M") if sell else None,
+            "sell_price": float(sell.order_price) if sell else None,
+            "pnl": float(sell.profit_loss) if sell and sell.profit_loss is not None else None,
+            "buy_reason": buy_reason,
+            "sell_reason": sell_reason,
+        })
+
+    return trades
+
+
+async def _get_today_performance(db: AsyncSession, now: datetime) -> dict:
+    """오늘 전체 매매 성적 요약."""
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    result = await db.execute(
+        select(OrderHistory)
+        .where(OrderHistory.order_type == "SELL")
+        .where(OrderHistory.created_at >= today_start)
+    )
+    sells = result.scalars().all()
+
+    wins = 0
+    losses = 0
+    evens = 0
+    total_pnl = 0.0
+    for s in sells:
+        pnl = float(s.profit_loss) if s.profit_loss is not None else 0.0
+        total_pnl += pnl
+        if pnl > 0:
+            wins += 1
+        elif pnl < 0:
+            losses += 1
+        else:
+            evens += 1
+
+    return {
+        "total_closed": len(sells),
+        "wins": wins,
+        "losses": losses,
+        "evens": evens,
+        "total_pnl": total_pnl,
     }
 
 
