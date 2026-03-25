@@ -544,7 +544,7 @@ async def _build_stock_prompt_context(
     return {
         "stock_code": stock_code,
         "stock_name": stock_name,
-        "market": {
+        "fundamental": {
             "collected_at": _to_iso(market_snapshot.published_at or market_snapshot.created_at),
             "per": _safe_float(market_snapshot.per),
             "pbr": _safe_float(market_snapshot.pbr),
@@ -584,7 +584,7 @@ async def _build_stock_prompt_context(
             }
             for c in candles
         ],
-        "quote": quote,
+        "orderbook": quote,
     }
 
 
