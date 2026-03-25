@@ -232,7 +232,7 @@ async def build_sell_prompt(
         return None
 
     buy_reason = await _get_buy_reason(db, stock_code)
-    stock_context_json = json.dumps(stock_context, ensure_ascii=False, default=_json_default, indent=2)
+    stock_info = f'<stock-info name="{stock_name}" code="{stock_code}">\n{json.dumps(stock_context, ensure_ascii=False, default=_json_default, indent=2)}\n</stock-info>'
 
     # 손익분기가 & 세후 수익률 계산
     avg_buy = Decimal(str(position.unit_price))
@@ -259,7 +259,7 @@ async def build_sell_prompt(
         buy_target_pct=buy_target or "N/A",
         buy_stop_pct=buy_stop or "N/A",
         buy_reason=buy_reason or "",
-        stock_contexts=stock_context_json,
+        stock_info=stock_info,
     )
     return prompt
 
