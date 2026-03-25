@@ -24,7 +24,7 @@ from app.models.dart_disclosure import DartDisclosure
 from app.models.decision_history import DecisionHistory
 from app.models.market_snapshot import MarketSnapshot
 from app.models.minute_candle import MinuteCandle
-from app.services.ws_collector import build_candles
+from app.services.ws_collector import build_candles, get_redis, quote_tick_key
 from app.models.news import News
 from app.models.order_history import OrderHistory
 from app.models.prompt_template import PromptTemplate
@@ -522,6 +522,18 @@ async def _build_stock_prompt_context(
     # 분봉: Redis 틱 데이터에서 분봉 생성 후 DB 저장
     candles = await build_candles(db, stock_code, minutes=30)
 
+    # 최신 호가 (Redis에서 최신 1건)
+    quote = None
+    redis_client = await get_redis()
+    try:
+        raw_quotes = await redis_client.zrevrangebyscore(
+            quote_tick_key(stock_code), "+inf", "-inf", start=0, num=1
+        )
+        if raw_quotes:
+            quote = json.loads(raw_quotes[0].decode() if isinstance(raw_quotes[0], bytes) else raw_quotes[0])
+    finally:
+        await redis_client.aclose()
+
     if market_snapshot is None:
         logger.warning("시장 스냅샷 없음 stock_code=%s", stock_code)
         return None
@@ -572,6 +584,7 @@ async def _build_stock_prompt_context(
             }
             for c in candles
         ],
+        "quote": quote,
     }
 
 

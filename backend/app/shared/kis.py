@@ -148,6 +148,8 @@ class KisClient:
         time_kst = response.time_kst
         return stock_code, {
             "quote_time": time_kst.strftime("%H:%M:%S"),
-            "ask_price": int(response.asks[0].price),
-            "bid_price": int(response.bids[0].price),
+            "ask_price": int(response.ask_price),
+            "bid_price": int(response.bid_price),
+            "ask_volume": int(response.ask_volume),
+            "bid_volume": int(response.bid_volume),
         }

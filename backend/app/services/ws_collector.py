@@ -26,7 +26,7 @@ def _trade_tick_key(stock_code: str) -> str:
     return TRADE_TICK_KEY_PATTERN.format(stock_code=stock_code)
 
 
-def _quote_tick_key(stock_code: str) -> str:
+def quote_tick_key(stock_code: str) -> str:
     return QUOTE_TICK_KEY_PATTERN.format(stock_code=stock_code)
 
 
@@ -70,7 +70,7 @@ def _require_int(raw_value: object, field_name: str) -> int:
         raise ValueError(f"메시지 숫자 파싱 실패: {field_name}") from exc
 
 
-async def _get_redis() -> aioredis.Redis:
+async def get_redis() -> aioredis.Redis:
     return aioredis.from_url(settings.REDIS_URL, decode_responses=False)
 
 
@@ -89,7 +89,7 @@ async def save_trade_tick(stock_code: str, tick: dict, now: datetime | None = No
         "price": price,
         "volume": volume,
     }
-    redis_client = await _get_redis()
+    redis_client = await get_redis()
     try:
         await redis_client.zadd(
             _trade_tick_key(stock_code),
@@ -108,16 +108,20 @@ async def save_quote_tick(stock_code: str, tick: dict, now: datetime | None = No
     _parse_time_or_raise(quote_time, "quote_time")
     ask_price = _require_int(tick.get("ask_price"), "ask_price")
     bid_price = _require_int(tick.get("bid_price"), "bid_price")
+    ask_volume = _require_int(tick.get("ask_volume"), "ask_volume")
+    bid_volume = _require_int(tick.get("bid_volume"), "bid_volume")
 
     payload = {
         "quote_time": quote_time,
         "ask_price": ask_price,
         "bid_price": bid_price,
+        "ask_volume": ask_volume,
+        "bid_volume": bid_volume,
     }
-    redis_client = await _get_redis()
+    redis_client = await get_redis()
     try:
         await redis_client.zadd(
-            _quote_tick_key(stock_code),
+            quote_tick_key(stock_code),
             {_serialize_payload(payload).encode(): collected_at.timestamp()},
             nx=True,
         )
@@ -136,12 +140,12 @@ async def trim_ticks(
 
     close_after = False
     if redis_client is None:
-        redis_client = await _get_redis()
+        redis_client = await get_redis()
         close_after = True
 
     try:
         await redis_client.zremrangebyscore(_trade_tick_key(stock_code), "-inf", cutoff)
-        await redis_client.zremrangebyscore(_quote_tick_key(stock_code), "-inf", cutoff)
+        await redis_client.zremrangebyscore(quote_tick_key(stock_code), "-inf", cutoff)
     finally:
         if close_after:
             await redis_client.aclose()
@@ -152,7 +156,7 @@ async def build_candles(session: AsyncSession, stock_code: str, minutes: int = 3
     collected_at = _resolve_now(None)
     min_collected_at = collected_at - timedelta(minutes=minutes)
 
-    redis_client = await _get_redis()
+    redis_client = await get_redis()
     try:
         raw_ticks = await redis_client.zrangebyscore(
             _trade_tick_key(stock_code),
