@@ -89,6 +89,11 @@ async def save_trade_tick(stock_code: str, tick: dict, now: datetime | None = No
         "price": price,
         "volume": volume,
     }
+    # buy_qty/sell_qty는 있으면 저장 (누적 매수/매도 수량)
+    if tick.get("buy_qty") is not None:
+        payload["buy_qty"] = int(tick["buy_qty"])
+    if tick.get("sell_qty") is not None:
+        payload["sell_qty"] = int(tick["sell_qty"])
     redis_client = await get_redis()
     try:
         await redis_client.zadd(
@@ -118,6 +123,10 @@ async def save_quote_tick(stock_code: str, tick: dict, now: datetime | None = No
         "ask_volume": ask_volume,
         "bid_volume": bid_volume,
     }
+    if tick.get("total_ask_volume") is not None:
+        payload["total_ask_volume"] = int(tick["total_ask_volume"])
+    if tick.get("total_bid_volume") is not None:
+        payload["total_bid_volume"] = int(tick["total_bid_volume"])
     redis_client = await get_redis()
     try:
         await redis_client.zadd(
@@ -220,12 +229,9 @@ async def build_candles(session: AsyncSession, stock_code: str, minutes: int = 3
 
 
 async def run_ws_subscriber(stock_codes: list[str] | None = None) -> None:
-    """KIS WebSocket 구독을 시작하고, 체결/호가 데이터를 Redis에 저장한다.
-
-    PyKis WebSocket은 동기 blocking이므로 별도 스레드에서 실행하고,
-    체결/호가 콜백에서 asyncio로 Redis 저장을 호출한다.
-    """
+    """KIS WebSocket 구독을 시작하고, 체결/호가 데이터를 Redis에 저장한다."""
     from app.database import async_session
+    from app.shared.kis_ws import KisWebSocketClient
 
     if stock_codes is None:
         async with async_session() as session:
@@ -238,20 +244,11 @@ async def run_ws_subscriber(stock_codes: list[str] | None = None) -> None:
         logger.warning("구독할 종목이 없습니다")
         return
 
-    loop = asyncio.get_event_loop()
+    async def on_trade(stock_code: str, tick: dict) -> None:
+        await save_trade_tick(stock_code, tick)
 
-    def on_trade(stock_code: str, tick: dict) -> None:
-        asyncio.run_coroutine_threadsafe(save_trade_tick(stock_code, tick), loop)
+    async def on_orderbook(stock_code: str, tick: dict) -> None:
+        await save_quote_tick(stock_code, tick)
 
-    def on_orderbook(stock_code: str, tick: dict) -> None:
-        asyncio.run_coroutine_threadsafe(save_quote_tick(stock_code, tick), loop)
-
-    client = KisClient(use_websocket=True)
-
-    # PyKis WebSocket은 동기 blocking이므로 별도 스레드에서 실행
-    await asyncio.to_thread(
-        client.subscribe_realtime,
-        stock_codes,
-        on_trade,
-        on_orderbook,
-    )
+    client = KisWebSocketClient()
+    await client.connect(stock_codes, on_trade, on_orderbook)
