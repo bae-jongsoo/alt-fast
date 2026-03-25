@@ -22,6 +22,9 @@ class OrderHistory(Base):
     result_price: Mapped[float] = mapped_column(Numeric(20, 2))
     result_quantity: Mapped[int] = mapped_column()
     result_total_amount: Mapped[float] = mapped_column(Numeric(20, 2))
+    buy_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("order_histories.id", ondelete="SET NULL"), nullable=True
+    )
     profit_loss: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)
     profit_rate: Mapped[float | None] = mapped_column(nullable=True)
     profit_loss_net: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)

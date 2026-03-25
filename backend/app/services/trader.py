@@ -426,8 +426,19 @@ async def execute_sell(
 
     await apply_virtual_sell(db, stock_code, price, quantity)
 
+    # 직전 BUY 주문 찾기
+    buy_order_result = await db.execute(
+        select(OrderHistory)
+        .where(OrderHistory.stock_code == stock_code)
+        .where(OrderHistory.order_type == "BUY")
+        .order_by(desc(OrderHistory.created_at))
+        .limit(1)
+    )
+    buy_order = buy_order_result.scalar_one_or_none()
+
     order = OrderHistory(
         decision_history_id=decision_history.id,
+        buy_order_id=buy_order.id if buy_order else None,
         stock_code=stock_code,
         stock_name=stock_name,
         order_type="SELL",
@@ -747,16 +758,23 @@ async def _get_today_closed_trades(db: AsyncSession, now: datetime) -> dict:
                         sell_reason = item["reason"]
                         break
 
-        # 매수 사유: 같은 종목의 직전 BUY 주문에서 추출
-        buy_result = await db.execute(
-            select(OrderHistory)
-            .where(OrderHistory.stock_code == sell.stock_code)
-            .where(OrderHistory.order_type == "BUY")
-            .where(OrderHistory.created_at < sell.created_at)
-            .order_by(desc(OrderHistory.created_at))
-            .limit(1)
-        )
-        buy_order = buy_result.scalar_one_or_none()
+        # 매수 주문: buy_order_id가 있으면 직접 참조, 없으면 fallback
+        buy_order = None
+        if sell.buy_order_id:
+            buy_result = await db.execute(
+                select(OrderHistory).where(OrderHistory.id == sell.buy_order_id)
+            )
+            buy_order = buy_result.scalar_one_or_none()
+        if buy_order is None:
+            buy_result = await db.execute(
+                select(OrderHistory)
+                .where(OrderHistory.stock_code == sell.stock_code)
+                .where(OrderHistory.order_type == "BUY")
+                .where(OrderHistory.created_at < sell.created_at)
+                .order_by(desc(OrderHistory.created_at))
+                .limit(1)
+            )
+            buy_order = buy_result.scalar_one_or_none()
         buy_price = float(buy_order.order_price) if buy_order else None
         if buy_order and buy_order.decision_history_id:
             buy_dh_result = await db.execute(
