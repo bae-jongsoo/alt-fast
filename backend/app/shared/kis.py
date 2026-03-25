@@ -138,6 +138,8 @@ class KisClient:
             "trade_time": time_kst.strftime("%H:%M:%S"),
             "price": int(response.price),
             "volume": int(response.__data__[12]),  # CNTG_VOL 체결 거래량 (건별)
+            "buy_qty": int(response.buy_quantity),   # SHNU_CNTG_SMTN 총 매수 수량 (누적)
+            "sell_qty": int(response.sell_quantity),  # SELN_CNTG_SMTN 총 매도 수량 (누적)
         }
 
     @staticmethod
