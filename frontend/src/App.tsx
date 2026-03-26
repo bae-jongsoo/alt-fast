@@ -8,6 +8,7 @@ import TradesPage from "@/pages/TradesPage";
 import NewsPage from "@/pages/NewsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import LoginPage from "@/pages/LoginPage";
+import ChartPage from "@/pages/ChartPage";
 import ChatPage from "@/pages/ChatPage";
 
 const queryClient = new QueryClient({
@@ -29,6 +30,7 @@ function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/trades" element={<TradesPage />} />
               <Route path="/news" element={<NewsPage />} />
+              <Route path="/chart" element={<ChartPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/chat" element={<ChatPage />} />

@@ -15,6 +15,7 @@ const navItems = [
   { to: "/", label: "대시보드" },
   { to: "/trades", label: "매매이력" },
   { to: "/news", label: "뉴스·공시" },
+  { to: "/chart", label: "차트" },
   { to: "/settings", label: "설정" },
 ] as const;
 
