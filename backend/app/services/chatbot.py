@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
-from app.shared.llm import ask_llm_by_level, ask_llm_high, get_llm_level
+from app.shared.llm import ask_llm_by_level, get_llm_level
 from app.models.asset import Asset
 from app.models.order_history import OrderHistory
 from app.models.decision_history import DecisionHistory
