@@ -614,7 +614,7 @@ async def _chat_stream_openclaw(
                 tool_result=tool_result,
             )
 
-            response = await ask_llm_high(followup_prompt, timeout_seconds=120)
+            response = await ask_llm_by_level(level, followup_prompt, timeout_seconds=120)
 
         # 응답을 한 번에 전송 (openclaw는 스트리밍 미지원)
         data = json.dumps(
