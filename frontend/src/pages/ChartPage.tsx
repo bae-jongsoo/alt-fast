@@ -210,7 +210,7 @@ export default function ChartPage() {
       <div className="flex flex-wrap items-center gap-3">
         <Select
           value={effectiveStockCode}
-          onValueChange={(v) => setStockCode(v)}
+          onValueChange={(v) => setStockCode(v ?? "")}
         >
           <SelectTrigger className="w-48">
             <SelectValue placeholder="종목 선택" />
@@ -364,11 +364,11 @@ export default function ChartPage() {
                   domain={[0, Math.ceil(maxVolume * 1.1)]}
                 />
                 <Tooltip
-                  formatter={(value: number) => [
-                    value.toLocaleString(),
+                  formatter={(value: unknown) => [
+                    Number(value).toLocaleString(),
                     "거래량",
                   ]}
-                  labelFormatter={(label: string) => label}
+                  labelFormatter={(label: unknown) => String(label)}
                   contentStyle={{
                     fontSize: "12px",
                     borderRadius: "6px",
