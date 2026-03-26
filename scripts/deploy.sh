@@ -44,6 +44,8 @@ nginx -s reload
 
 STEP="supervisor restart"
 echo "=== supervisor restart ==="
+$SUPERVISORCTL -c "$SUPERVISOR_CONF" reread
+$SUPERVISORCTL -c "$SUPERVISOR_CONF" update
 $SUPERVISORCTL -c "$SUPERVISOR_CONF" restart all
 
 echo "=== deploy complete ==="
