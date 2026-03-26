@@ -151,7 +151,7 @@ export default function ParameterSettings({
   const allItems = data?.items ?? [];
   const items = filterKeys ? allItems.filter((item) => filterKeys(item.key)) : allItems;
 
-  // 편집 모드 진입 시 현재 값으로 초기화
+  // 편집 모드 진입 시 현재 값으로 초기화 (isEditing이 true로 바뀔 때만)
   useEffect(() => {
     if (isEditing && items.length > 0) {
       const values: Record<string, string> = {};
@@ -161,7 +161,8 @@ export default function ParameterSettings({
       setEditValues(values);
       setErrors({});
     }
-  }, [isEditing, items]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing]);
 
   function handleEditClick() {
     if (!isLoggedIn) {
