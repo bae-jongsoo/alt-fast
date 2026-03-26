@@ -19,7 +19,11 @@ KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
 KIS_INQUIRE_PRICE_URL = (
     f"{KIS_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price"
 )
+KIS_INQUIRE_TIME_ITEMCHARTPRICE_URL = (
+    f"{KIS_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
+)
 KIS_TR_ID_INQUIRE_PRICE = "FHKST01010100"
+KIS_TR_ID_INQUIRE_TIME_ITEMCHARTPRICE = "FHKST03010200"
 
 
 class KisClient:
@@ -78,6 +82,88 @@ class KisClient:
             raise RuntimeError("KIS API 비정상 응답: output 필드가 없습니다")
 
         return output
+
+    async def fetch_minute_candles(
+        self, stock_code: str, inquiry_time: str = "160000"
+    ) -> list[dict]:
+        """KIS 당일분봉조회 API로 당일 전체 1분봉 데이터를 수집한다.
+
+        Args:
+            stock_code: 종목코드 (6자리)
+            inquiry_time: 조회시간 HHMMSS (기본: 160000)
+
+        Returns:
+            분봉 데이터 리스트 (시간 역순 → 시간 순으로 정렬하여 반환)
+        """
+        all_candles: list[dict] = []
+        ctx_area_fk = ""
+        ctx_area_nk = ""
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            while True:
+                headers = {
+                    "authorization": f"Bearer {self.access_token}",
+                    "appkey": settings.KIS_APP_KEY,
+                    "appsecret": settings.KIS_APP_SECRET,
+                    "tr_id": KIS_TR_ID_INQUIRE_TIME_ITEMCHARTPRICE,
+                    "custtype": "P",
+                }
+                if ctx_area_fk or ctx_area_nk:
+                    headers["tr_cont"] = "N"
+                else:
+                    headers["tr_cont"] = ""
+
+                params = {
+                    "fid_etc_cls_code": "",
+                    "fid_cond_mrkt_div_code": "J",
+                    "fid_input_iscd": stock_code,
+                    "fid_input_hour_1": inquiry_time,
+                    "fid_pw_data_incu_yn": "N",
+                }
+                if ctx_area_fk or ctx_area_nk:
+                    params["CTX_AREA_FK200"] = ctx_area_fk
+                    params["CTX_AREA_NK200"] = ctx_area_nk
+
+                try:
+                    response = await client.get(
+                        KIS_INQUIRE_TIME_ITEMCHARTPRICE_URL,
+                        headers=headers,
+                        params=params,
+                    )
+                    response.raise_for_status()
+                except httpx.HTTPError as exc:
+                    raise RuntimeError(f"KIS 분봉 조회 실패: {exc}") from exc
+
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    raise RuntimeError("KIS 분봉 응답 JSON 파싱 실패") from exc
+
+                if str(payload.get("rt_cd")) != "0":
+                    error_message = (
+                        payload.get("msg1") or payload.get("msg_cd") or "알 수 없는 오류"
+                    )
+                    raise RuntimeError(f"KIS 분봉 API 오류: {error_message}")
+
+                output2 = payload.get("output2")
+                if not isinstance(output2, list) or not output2:
+                    break
+
+                all_candles.extend(output2)
+
+                # 연속조회 판단
+                tr_cont = response.headers.get("tr_cont", "")
+                if tr_cont not in ("F", "M"):
+                    break
+
+                ctx_area_fk = payload.get("ctx_area_fk200", "").strip()
+                ctx_area_nk = payload.get("ctx_area_nk200", "").strip()
+                if not ctx_area_fk and not ctx_area_nk:
+                    break
+
+        # 시간 역순으로 오므로, 시간 순으로 정렬
+        all_candles.reverse()
+        return all_candles
 
     # -- WebSocket (동기 blocking) ---------------------------------
 

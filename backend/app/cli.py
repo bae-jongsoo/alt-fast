@@ -2,7 +2,7 @@ import asyncio
 import subprocess
 import sys
 import time
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta
 from typing import Optional
 
 import typer
@@ -36,6 +36,9 @@ app.add_typer(todo_app, name="todo")
 
 db_app = typer.Typer(help="데이터베이스 관련 명령어")
 app.add_typer(db_app, name="db")
+
+backfill_app = typer.Typer(help="데이터 보충 관련 명령어")
+app.add_typer(backfill_app, name="backfill")
 
 review_app = typer.Typer(help="일일 회고/리포트")
 app.add_typer(review_app, name="review")
@@ -330,6 +333,94 @@ def review_daily(
 
         msg = await generate_and_send_daily_review(target_dt, dry_run=dry_run)
         typer.echo(msg)
+
+    asyncio.run(_run())
+
+
+# ── backfill ─────────────────────────────────────────────────────
+
+@backfill_app.command("candles")
+def backfill_candles(
+    stock_code: Optional[str] = typer.Option(
+        None, "--stock-code", help="특정 종목코드 (미지정 시 활성 종목 전체)"
+    ),
+    date: Optional[str] = typer.Option(
+        None, "--date", help="대상 날짜 (YYYY-MM-DD, KST). 미지정 시 오늘"
+    ),
+) -> None:
+    """KIS 당일분봉조회 API로 빈 분봉 데이터를 보충한다 (수동 실행용)."""
+
+    async def _run() -> None:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from app.database import async_session
+        from app.services.candle_backfill import backfill_candles as _backfill
+
+        kst = ZoneInfo("Asia/Seoul")
+        target_dt = datetime.now(tz=kst)
+        if date:
+            target_dt = datetime.fromisoformat(date).replace(tzinfo=kst)
+
+        codes = [stock_code] if stock_code else None
+
+        async with async_session() as session:
+            results = await _backfill(session, stock_codes=codes, target_date=target_dt)
+            typer.echo(
+                f"분봉 보충 완료: {len(results['stock_codes'])}종목, "
+                f"fetched={results['fetched']}, "
+                f"inserted={results['inserted']}, "
+                f"skipped={results['skipped']}"
+            )
+
+    asyncio.run(_run())
+
+
+@backfill_app.command("candles-scheduler")
+def backfill_candles_scheduler() -> None:
+    """장 마감 후(15:40) 분봉 보충을 자동 실행하는 스케줄러."""
+
+    async def _run() -> None:
+        from zoneinfo import ZoneInfo
+
+        from app.database import async_session
+        from app.services.candle_backfill import backfill_candles as _backfill
+
+        kst = ZoneInfo("Asia/Seoul")
+        typer.echo("분봉 보충 스케줄러 시작...")
+
+        while True:
+            now = datetime.now(tz=kst)
+            target_time = now.replace(hour=15, minute=40, second=0, microsecond=0)
+
+            # 오늘 15:40 이전이면 오늘 15:40까지 대기
+            # 오늘 15:40 이후이면 즉시 실행 후 내일 15:40까지 대기
+            if now.time() < dt_time(15, 40):
+                wait_seconds = (target_time - now).total_seconds()
+                typer.echo(f"15:40까지 {int(wait_seconds)}초 대기...")
+                await asyncio.sleep(wait_seconds)
+
+            typer.echo(f"분봉 보충 실행: {datetime.now(tz=kst).isoformat()}")
+            try:
+                async with async_session() as session:
+                    results = await _backfill(session, target_date=datetime.now(tz=kst))
+                    typer.echo(
+                        f"분봉 보충 완료: {len(results['stock_codes'])}종목, "
+                        f"fetched={results['fetched']}, "
+                        f"inserted={results['inserted']}, "
+                        f"skipped={results['skipped']}"
+                    )
+            except Exception as exc:
+                typer.echo(f"분봉 보충 오류: {exc}", err=True)
+
+            # 다음 날 15:40까지 대기
+            now = datetime.now(tz=kst)
+            next_run = (now + timedelta(days=1)).replace(
+                hour=15, minute=40, second=0, microsecond=0
+            )
+            wait_seconds = (next_run - now).total_seconds()
+            typer.echo(f"다음 실행까지 {int(wait_seconds)}초 대기...")
+            await asyncio.sleep(wait_seconds)
 
     asyncio.run(_run())
 
