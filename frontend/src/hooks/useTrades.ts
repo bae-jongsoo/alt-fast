@@ -15,6 +15,7 @@ export interface OrderHistoryItem {
   profit_loss: number | null;
   profit_rate: number | null;
   profit_rate_net: number | null;
+  result_executed_at: string | null;
   decision_history_id: number | null;
 }
 

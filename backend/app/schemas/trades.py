@@ -15,6 +15,7 @@ class OrderHistoryItem(BaseModel):
     profit_loss: float | None
     profit_rate: float | None
     profit_rate_net: float | None
+    result_executed_at: datetime | None
     decision_history_id: int | None
 
 
