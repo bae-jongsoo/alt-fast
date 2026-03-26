@@ -220,15 +220,19 @@ class KisWebSocketClient:
         quote_time = fields[1]  # HHMMSS
         time_str = f"{quote_time[:2]}:{quote_time[2:4]}:{quote_time[4:6]}"
 
-        return stock_code, {
-            "quote_time": time_str,
-            "ask_price": int(fields[3]),     # 매도 1호가
-            "bid_price": int(fields[13]),    # 매수 1호가
-            "ask_volume": int(fields[23]),   # 매도 1호가 잔량
-            "bid_volume": int(fields[33]),   # 매수 1호가 잔량
-            "total_ask_volume": int(fields[43]),  # 총 매도 잔량
-            "total_bid_volume": int(fields[44]),  # 총 매수 잔량
-        }
+        tick: dict[str, Any] = {"quote_time": time_str}
+
+        # 5호가 (매도1~5, 매수1~5, 잔량)
+        for i in range(5):
+            tick[f"ask_price{i + 1}"] = int(fields[3 + i])
+            tick[f"bid_price{i + 1}"] = int(fields[13 + i])
+            tick[f"ask_volume{i + 1}"] = int(fields[23 + i])
+            tick[f"bid_volume{i + 1}"] = int(fields[33 + i])
+
+        tick["total_ask_volume"] = int(fields[43])
+        tick["total_bid_volume"] = int(fields[44])
+
+        return stock_code, tick
 
     # -- approval_key 캐시 --
 

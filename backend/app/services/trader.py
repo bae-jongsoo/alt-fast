@@ -27,6 +27,7 @@ from app.models.minute_candle import MinuteCandle
 from app.services.ws_collector import build_candles, get_redis, quote_tick_key
 from app.models.news import News
 from app.models.order_history import OrderHistory
+from app.models.orderbook_snapshot import OrderbookSnapshot
 from app.models.prompt_template import PromptTemplate
 from app.models.target_stock import TargetStock
 from app.services.asset_manager import (
@@ -534,6 +535,30 @@ async def _build_stock_prompt_context(
     finally:
         await redis_client.aclose()
 
+    # 호가 스냅샷 DB 저장
+    if quote and quote.get("ask_price1"):
+        snapshot = OrderbookSnapshot(
+            stock_code=stock_code,
+            snapshot_at=now.replace(second=0, microsecond=0),
+            **{
+                k: quote[k]
+                for k in (
+                    *(f"ask_price{i}" for i in range(1, 6)),
+                    *(f"bid_price{i}" for i in range(1, 6)),
+                    *(f"ask_volume{i}" for i in range(1, 6)),
+                    *(f"bid_volume{i}" for i in range(1, 6)),
+                    "total_ask_volume",
+                    "total_bid_volume",
+                )
+                if k in quote
+            },
+        )
+        try:
+            await db.merge(snapshot)
+            await db.flush()
+        except Exception:
+            logger.warning("호가 스냅샷 저장 실패 stock_code=%s", stock_code)
+
     if market_snapshot is None:
         logger.warning("시장 스냅샷 없음 stock_code=%s", stock_code)
         return None
@@ -584,7 +609,20 @@ async def _build_stock_prompt_context(
             }
             for c in candles
         ],
-        "orderbook": quote,
+        "orderbook": {
+            "asks": [
+                {"price": quote[f"ask_price{i}"], "volume": quote[f"ask_volume{i}"]}
+                for i in range(1, 6)
+                if quote.get(f"ask_price{i}")
+            ],
+            "bids": [
+                {"price": quote[f"bid_price{i}"], "volume": quote[f"bid_volume{i}"]}
+                for i in range(1, 6)
+                if quote.get(f"bid_price{i}")
+            ],
+            "total_ask_volume": quote.get("total_ask_volume"),
+            "total_bid_volume": quote.get("total_bid_volume"),
+        } if quote and quote.get("ask_price1") else quote,
     }
 
 

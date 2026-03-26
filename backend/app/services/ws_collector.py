@@ -111,18 +111,16 @@ async def save_quote_tick(stock_code: str, tick: dict, now: datetime | None = No
 
     quote_time = _require_text(tick.get("quote_time"), "quote_time")
     _parse_time_or_raise(quote_time, "quote_time")
-    ask_price = _require_int(tick.get("ask_price"), "ask_price")
-    bid_price = _require_int(tick.get("bid_price"), "bid_price")
-    ask_volume = _require_int(tick.get("ask_volume"), "ask_volume")
-    bid_volume = _require_int(tick.get("bid_volume"), "bid_volume")
 
-    payload = {
-        "quote_time": quote_time,
-        "ask_price": ask_price,
-        "bid_price": bid_price,
-        "ask_volume": ask_volume,
-        "bid_volume": bid_volume,
-    }
+    payload: dict = {"quote_time": quote_time}
+
+    # 5호가 데이터
+    for i in range(1, 6):
+        payload[f"ask_price{i}"] = _require_int(tick.get(f"ask_price{i}"), f"ask_price{i}")
+        payload[f"bid_price{i}"] = _require_int(tick.get(f"bid_price{i}"), f"bid_price{i}")
+        payload[f"ask_volume{i}"] = _require_int(tick.get(f"ask_volume{i}"), f"ask_volume{i}")
+        payload[f"bid_volume{i}"] = _require_int(tick.get(f"bid_volume{i}"), f"bid_volume{i}")
+
     if tick.get("total_ask_volume") is not None:
         payload["total_ask_volume"] = int(tick["total_ask_volume"])
     if tick.get("total_bid_volume") is not None:

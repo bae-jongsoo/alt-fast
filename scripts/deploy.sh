@@ -32,6 +32,10 @@ echo "=== backend dependencies ==="
 cd "$PROJECT_DIR/backend"
 uv sync --quiet
 
+STEP="db migration"
+echo "=== db migration ==="
+uv run alembic upgrade head
+
 STEP="frontend build"
 echo "=== frontend build ==="
 cd "$PROJECT_DIR/frontend"

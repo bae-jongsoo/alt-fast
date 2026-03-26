@@ -5,6 +5,7 @@ from app.models.market_snapshot import MarketSnapshot
 from app.models.minute_candle import MinuteCandle
 from app.models.news import News
 from app.models.order_history import OrderHistory
+from app.models.orderbook_snapshot import OrderbookSnapshot
 from app.models.prompt_template import PromptTemplate
 from app.models.system_parameter import SystemParameter
 from app.models.target_stock import TargetStock
@@ -18,6 +19,7 @@ __all__ = [
     "MinuteCandle",
     "News",
     "OrderHistory",
+    "OrderbookSnapshot",
     "PromptTemplate",
     "SystemParameter",
     "TargetStock",
