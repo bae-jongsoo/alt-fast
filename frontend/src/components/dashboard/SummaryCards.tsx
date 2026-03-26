@@ -82,12 +82,12 @@ export default function SummaryCards({ data, isLoading }: SummaryCardsProps) {
         </CardContent>
       </Card>
 
-      {/* 오늘 실현손익 */}
+      {/* 오늘 실현손익(세후) */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
             <TrendingUp className="size-4" />
-            오늘 실현손익
+            오늘 실현손익(세후)
           </CardTitle>
         </CardHeader>
         <CardContent>

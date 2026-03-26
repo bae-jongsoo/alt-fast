@@ -70,9 +70,9 @@ async def _get_summary(db: AsyncSession) -> SummaryCard:
 
     total_asset_value = cash_balance + eval_total
 
-    # 오늘 실현손익
+    # 오늘 실현손익 (세후)
     pnl_result = await db.execute(
-        select(func.coalesce(func.sum(OrderHistory.profit_loss), 0))
+        select(func.coalesce(func.sum(OrderHistory.profit_loss_net), 0))
         .where(
             OrderHistory.order_type == "SELL",
             OrderHistory.created_at >= today_start,
