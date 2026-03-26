@@ -30,6 +30,7 @@ def _to_order_item(o: OrderHistory) -> OrderHistoryItem:
         profit_loss=float(o.profit_loss) if o.profit_loss is not None else None,
         profit_rate=float(o.profit_rate) if o.profit_rate is not None else None,
         profit_rate_net=float(o.profit_rate_net) if o.profit_rate_net is not None else None,
+        result_executed_at=o.result_executed_at,
         decision_history_id=o.decision_history_id,
     )
 
