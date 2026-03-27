@@ -8,6 +8,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.news import router as news_router
 from app.api.report import router as report_router
 from app.api.settings import router as settings_router
+from app.api.strategies import router as strategies_router
 from app.api.trades import router as trades_router
 
 router = APIRouter()
@@ -22,6 +23,7 @@ router.include_router(auth_router)
 router.include_router(chart_router)
 router.include_router(chatbot_router)
 router.include_router(dashboard_router)
+router.include_router(strategies_router)
 router.include_router(trades_router)
 router.include_router(news_router)
 router.include_router(report_router)

@@ -94,6 +94,9 @@ def _is_market_open(market_start: str, market_end: str) -> bool:
 
 @trader_app.command("run")
 def trader_run(
+    strategy: str = typer.Option(
+        "default", "--strategy", help="전략 이름 (미지정 시 'default')"
+    ),
     stock_codes: Optional[str] = typer.Option(
         None, "--stock-codes", help="쉼표 구분 종목코드 (미지정 시 TargetStock 전체)"
     ),
@@ -102,28 +105,30 @@ def trader_run(
 
     async def _run() -> None:
         from app.database import async_session
+        from app.services.trader import get_strategy_by_name, run_trading_cycle
 
-        typer.echo("트레이더 시작...")
+        typer.echo(f"트레이더 시작... (전략: {strategy})")
+
+        # 전략 ID 조회
+        async with async_session() as session:
+            strategy_obj = await get_strategy_by_name(session, strategy)
+            strategy_id = strategy_obj.id
+            typer.echo(f"전략 로드: id={strategy_id} name={strategy_obj.name}")
+
         while True:
             async with async_session() as session:
                 interval = int(await _get_system_param(session, "trading_interval", "60"))
                 market_start = await _get_system_param(session, "market_start_time", "09:00")
                 market_end = await _get_system_param(session, "market_end_time", "15:30")
 
-                codes = _parse_stock_codes(stock_codes)
-                if codes is None:
-                    codes = await _get_target_stock_codes(session)
-
                 if not _is_market_open(market_start, market_end):
                     typer.echo(f"장 운영 시간 외입니다 ({market_start}~{market_end}). {interval}초 후 재확인...")
                     await asyncio.sleep(interval)
                     continue
 
-                typer.echo(f"트레이딩 사이클 실행: {codes}")
+                typer.echo(f"트레이딩 사이클 실행 (전략: {strategy})")
                 try:
-                    from app.services.trader import run_trading_cycle
-
-                    decision = await run_trading_cycle(session)
+                    decision = await run_trading_cycle(session, strategy_id)
                     typer.echo(
                         f"트레이딩 사이클 완료: id={decision.id} "
                         f"result={decision.decision} "

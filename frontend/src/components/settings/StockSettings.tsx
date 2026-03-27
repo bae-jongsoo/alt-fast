@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useStrategyContext } from "@/hooks/useStrategy";
 import {
   useTargetStocks,
   useAddStock,
@@ -41,8 +42,9 @@ export default function StockSettings({
   onDirtyChange,
 }: StockSettingsProps) {
   const { isLoggedIn } = useAuth();
+  const { selectedStrategyId } = useStrategyContext();
   const navigate = useNavigate();
-  const { data, isLoading } = useTargetStocks();
+  const { data, isLoading } = useTargetStocks(selectedStrategyId);
   const addStock = useAddStock();
   const deleteStock = useDeleteStock();
 
@@ -101,6 +103,7 @@ export default function StockSettings({
 
     try {
       await addStock.mutateAsync({
+        strategy_id: selectedStrategyId ?? 0,
         stock_code: stockCode.trim(),
         stock_name: stockName.trim(),
         dart_corp_code: corpCode.trim() || null,

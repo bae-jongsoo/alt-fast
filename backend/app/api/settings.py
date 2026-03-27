@@ -32,8 +32,8 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 @router.get("/stocks", response_model=TargetStockListResponse)
-async def list_stocks(db: AsyncSession = Depends(get_db)):
-    return await get_stocks(db)
+async def list_stocks(strategy_id: int | None = None, db: AsyncSession = Depends(get_db)):
+    return await get_stocks(db, strategy_id)
 
 
 @router.post("/stocks", response_model=TargetStockItem, status_code=201)
@@ -42,34 +42,36 @@ async def add_stock(
     db: AsyncSession = Depends(get_db),
     _user: str = Depends(get_current_user),
 ):
-    return await create_stock(db, data)
+    return await create_stock(db, data, strategy_id=data.strategy_id)
 
 
 @router.delete("/stocks/{stock_code}", status_code=204)
 async def remove_stock(
     stock_code: str,
+    strategy_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _user: str = Depends(get_current_user),
 ):
-    await delete_stock(db, stock_code)
+    await delete_stock(db, stock_code, strategy_id)
 
 
 # ── 프롬프트 설정 ──
 
 
 @router.get("/prompts", response_model=PromptTemplateListResponse)
-async def list_prompts(db: AsyncSession = Depends(get_db)):
-    return await get_prompts(db)
+async def list_prompts(strategy_id: int | None = None, db: AsyncSession = Depends(get_db)):
+    return await get_prompts(db, strategy_id)
 
 
 @router.put("/prompts/{prompt_type}", response_model=PromptTemplateItem)
 async def edit_prompt(
     prompt_type: str,
     data: PromptTemplateUpdate,
+    strategy_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _user: str = Depends(get_current_user),
 ):
-    return await update_prompt(db, prompt_type, data)
+    return await update_prompt(db, prompt_type, data, strategy_id)
 
 
 @router.get("/prompts/variables")

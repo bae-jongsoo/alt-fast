@@ -7,6 +7,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
+import StrategySettings from "@/components/settings/StrategySettings";
 import StockSettings from "@/components/settings/StockSettings";
 import PromptSettings from "@/components/settings/PromptSettings";
 import ParameterSettings from "@/components/settings/ParameterSettings";
@@ -73,11 +74,16 @@ export default function SettingsPage() {
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
+          <TabsTrigger value="strategies">전략 관리</TabsTrigger>
           <TabsTrigger value="stocks">종목 설정</TabsTrigger>
           <TabsTrigger value="prompts">프롬프트 설정</TabsTrigger>
           <TabsTrigger value="models">모델 설정</TabsTrigger>
           <TabsTrigger value="parameters">시스템 파라미터</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="strategies">
+          <StrategySettings />
+        </TabsContent>
 
         <TabsContent value="stocks">
           <StockSettings

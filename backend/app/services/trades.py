@@ -43,6 +43,7 @@ async def get_orders(
     end_date: date | None = None,
     order_type: str | None = None,
     stock_code: str | None = None,
+    strategy_id: int | None = None,
 ) -> OrderHistoryListResponse:
     if start_date is None:
         start_date = (datetime.now(KST).replace(tzinfo=None) - timedelta(days=7)).date()
@@ -61,6 +62,9 @@ async def get_orders(
         OrderHistory.created_at <= end_dt,
     )
 
+    if strategy_id is not None:
+        base = base.where(OrderHistory.strategy_id == strategy_id)
+        count_base = count_base.where(OrderHistory.strategy_id == strategy_id)
     if order_type:
         base = base.where(OrderHistory.order_type == order_type)
         count_base = count_base.where(OrderHistory.order_type == order_type)
@@ -92,6 +96,7 @@ async def get_decisions(
     decision: str | None = None,
     stock_code: str | None = None,
     errors_only: bool = False,
+    strategy_id: int | None = None,
 ) -> DecisionHistoryListResponse:
     if start_date is None:
         start_date = (datetime.now(KST).replace(tzinfo=None) - timedelta(days=7)).date()
@@ -110,6 +115,9 @@ async def get_decisions(
         DecisionHistory.created_at <= end_dt,
     )
 
+    if strategy_id is not None:
+        base = base.where(DecisionHistory.strategy_id == strategy_id)
+        count_base = count_base.where(DecisionHistory.strategy_id == strategy_id)
     if decision:
         base = base.where(DecisionHistory.decision == decision)
         count_base = count_base.where(DecisionHistory.decision == decision)

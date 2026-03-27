@@ -22,9 +22,10 @@ async def list_orders(
     end_date: date | None = None,
     order_type: str | None = None,
     stock_code: str | None = None,
+    strategy_id: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_orders(db, page, page_size, start_date, end_date, order_type, stock_code)
+    return await get_orders(db, page, page_size, start_date, end_date, order_type, stock_code, strategy_id)
 
 
 @router.get("/decisions", response_model=DecisionHistoryListResponse)
@@ -36,9 +37,10 @@ async def list_decisions(
     decision: str | None = None,
     stock_code: str | None = None,
     errors_only: bool = False,
+    strategy_id: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_decisions(db, page, page_size, start_date, end_date, decision, stock_code, errors_only)
+    return await get_decisions(db, page, page_size, start_date, end_date, decision, stock_code, errors_only, strategy_id)
 
 
 @router.get("/decisions/{decision_id}", response_model=DecisionDetailResponse)

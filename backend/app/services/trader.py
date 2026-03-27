@@ -24,6 +24,7 @@ from app.models.dart_disclosure import DartDisclosure
 from app.models.decision_history import DecisionHistory
 from app.models.market_snapshot import MarketSnapshot
 from app.models.minute_candle import MinuteCandle
+from app.models.strategy import Strategy
 from app.services.ws_collector import build_candles, get_redis, quote_tick_key
 from app.models.news import News
 from app.models.order_history import OrderHistory
@@ -58,7 +59,18 @@ TRANSACTION_TAX_RATE = Decimal("0.002")   # 증권거래세 0.2% (매도 시에�
 # ---------------------------------------------------------------------------
 
 
-async def run_trading_cycle(db: AsyncSession) -> DecisionHistory:
+async def get_strategy_by_name(db: AsyncSession, name: str) -> Strategy:
+    """전략 이름으로 Strategy 조회. 없으면 에러."""
+    result = await db.execute(
+        select(Strategy).where(Strategy.name == name, Strategy.is_active.is_(True))
+    )
+    strategy = result.scalar_one_or_none()
+    if strategy is None:
+        raise ValueError(f"활성 전략을 찾을 수 없습니다: {name}")
+    return strategy
+
+
+async def run_trading_cycle(db: AsyncSession, strategy_id: int) -> DecisionHistory:
     """트레이딩 사이클 1회 실행.
 
     1. 포지션 확인 (보유 종목 있으면 SELL 판단, 없으면 BUY 판단)
@@ -76,16 +88,17 @@ async def run_trading_cycle(db: AsyncSession) -> DecisionHistory:
     error_message: str | None = None
 
     try:
-        position = await get_open_position(db)
+        position = await get_open_position(db, strategy_id)
         if position is None:
-            request_payload = await build_buy_prompt(db, current_time)
+            request_payload = await build_buy_prompt(db, strategy_id, current_time)
         else:
-            request_payload = await build_sell_prompt(db, position.stock_code, current_time)
+            request_payload = await build_sell_prompt(db, strategy_id, position.stock_code, current_time)
 
         if request_payload is None:
             processing_time_ms = int((time.monotonic() - started_at) * 1000)
             return await record_decision_history(
                 db,
+                strategy_id=strategy_id,
                 request_payload="",
                 response_payload="",
                 parsed_decision=parsed_decision,
@@ -115,6 +128,7 @@ async def run_trading_cycle(db: AsyncSession) -> DecisionHistory:
     processing_time_ms = int((time.monotonic() - started_at) * 1000)
     decision_history = await record_decision_history(
         db,
+        strategy_id=strategy_id,
         request_payload=request_payload or "",
         response_payload=response_payload,
         parsed_decision=parsed_decision,
@@ -137,6 +151,7 @@ async def run_trading_cycle(db: AsyncSession) -> DecisionHistory:
     if not is_error and result == "BUY":
         await execute_buy(
             db,
+            strategy_id=strategy_id,
             decision_history=decision_history,
             stock_code=str(decision["stock_code"]),
             price=Decimal(str(decision["price"])),
@@ -145,6 +160,7 @@ async def run_trading_cycle(db: AsyncSession) -> DecisionHistory:
     elif not is_error and result == "SELL":
         await execute_sell(
             db,
+            strategy_id=strategy_id,
             decision_history=decision_history,
             stock_code=str(decision["stock_code"]),
             price=Decimal(str(decision["price"])),
@@ -169,16 +185,16 @@ async def _alert(message: str) -> None:
 
 
 async def build_buy_prompt(
-    db: AsyncSession, current_time: datetime
+    db: AsyncSession, strategy_id: int, current_time: datetime
 ) -> str | None:
     """매수 프롬프트 조합: DB에서 prompt_template(type='buy') 읽기 + 변수 치환."""
-    template = await _get_prompt_template(db, "buy")
+    template = await _get_prompt_template(db, strategy_id, "buy")
     if template is None:
-        logger.warning("활성화된 buy 프롬프트 템플릿이 없습니다")
+        logger.warning("활성화된 buy 프롬프트 템플릿이 없습니다 (strategy_id=%s)", strategy_id)
         return None
 
-    cash = await get_cash_asset(db)
-    target_stocks = await _get_target_stocks(db)
+    cash = await get_cash_asset(db, strategy_id)
+    target_stocks = await _get_target_stocks(db, strategy_id)
 
     # 종목별 <stock-info> 블록 조립
     stock_infos: list[str] = []
@@ -211,15 +227,15 @@ async def build_buy_prompt(
 
 
 async def build_sell_prompt(
-    db: AsyncSession, stock_code: str, current_time: datetime
+    db: AsyncSession, strategy_id: int, stock_code: str, current_time: datetime
 ) -> str | None:
     """매도 프롬프트 조합: DB에서 prompt_template(type='sell') 읽기 + 변수 치환."""
-    template = await _get_prompt_template(db, "sell")
+    template = await _get_prompt_template(db, strategy_id, "sell")
     if template is None:
-        logger.warning("활성화된 sell 프롬프트 템플릿이 없습니다")
+        logger.warning("활성화된 sell 프롬프트 템플릿이 없습니다 (strategy_id=%s)", strategy_id)
         return None
 
-    position = await get_open_position(db)
+    position = await get_open_position(db, strategy_id)
     if position is None or position.stock_code != stock_code:
         raise ValueError("보유 종목이 아니거나 미보유 상태입니다")
 
@@ -272,6 +288,7 @@ async def build_sell_prompt(
 
 async def record_decision_history(
     db: AsyncSession,
+    strategy_id: int,
     request_payload: str,
     response_payload: str,
     parsed_decision: dict,
@@ -294,6 +311,7 @@ async def record_decision_history(
                 break
 
     history = DecisionHistory(
+        strategy_id=strategy_id,
         stock_code=stock_code,
         stock_name=stock_name,
         decision=result,
@@ -322,6 +340,7 @@ async def record_decision_history(
 
 async def execute_buy(
     db: AsyncSession,
+    strategy_id: int,
     decision_history: DecisionHistory,
     stock_code: str,
     price: Decimal,
@@ -332,7 +351,7 @@ async def execute_buy(
         raise ValueError("BUY 판단이 아니면 매수 주문을 실행할 수 없습니다")
     _validate_positive_order(price=price, quantity=quantity)
 
-    position = await get_open_position(db)
+    position = await get_open_position(db, strategy_id)
     if position is not None:
         raise ValueError("이미 보유 종목이 있어 매수 불가합니다")
 
@@ -343,9 +362,10 @@ async def execute_buy(
     order_total_amount = price * quantity
     executed_at = datetime.now()
 
-    await apply_virtual_buy(db, stock_code, stock_name, price, quantity)
+    await apply_virtual_buy(db, strategy_id, stock_code, stock_name, price, quantity)
 
     order = OrderHistory(
+        strategy_id=strategy_id,
         decision_history_id=decision_history.id,
         stock_code=stock_code,
         stock_name=stock_name,
@@ -366,7 +386,7 @@ async def execute_buy(
         "매수 실행: order_id=%s stock=%s price=%s qty=%s total=%s",
         order.id, stock_code, price, quantity, order_total_amount,
     )
-    cash = await get_cash_asset(db)
+    cash = await get_cash_asset(db, strategy_id)
     cash_amount = Decimal(str(cash.total_amount)) if cash else Decimal(0)
     stock_value = price * quantity
     order_history_logger.info(
@@ -377,6 +397,7 @@ async def execute_buy(
 
 async def execute_sell(
     db: AsyncSession,
+    strategy_id: int,
     decision_history: DecisionHistory,
     stock_code: str,
     price: Decimal,
@@ -387,7 +408,7 @@ async def execute_sell(
         raise ValueError("SELL 판단이 아니면 매도 주문을 실행할 수 없습니다")
     _validate_positive_order(price=price, quantity=quantity)
 
-    position = await get_open_position(db)
+    position = await get_open_position(db, strategy_id)
     if position is None or position.stock_code != stock_code:
         raise ValueError("해당 종목을 보유하고 있지 않은 미보유 상태입니다")
     if quantity > position.quantity:
@@ -408,19 +429,23 @@ async def execute_sell(
 
     executed_at = datetime.now()
 
-    await apply_virtual_sell(db, stock_code, price, quantity)
+    await apply_virtual_sell(db, strategy_id, stock_code, price, quantity)
 
     # 직전 BUY 주문 찾기
     buy_order_result = await db.execute(
         select(OrderHistory)
-        .where(OrderHistory.stock_code == stock_code)
-        .where(OrderHistory.order_type == "BUY")
+        .where(
+            OrderHistory.strategy_id == strategy_id,
+            OrderHistory.stock_code == stock_code,
+            OrderHistory.order_type == "BUY",
+        )
         .order_by(desc(OrderHistory.created_at))
         .limit(1)
     )
     buy_order = buy_order_result.scalar_one_or_none()
 
     order = OrderHistory(
+        strategy_id=strategy_id,
         decision_history_id=decision_history.id,
         buy_order_id=buy_order.id if buy_order else None,
         stock_code=stock_code,
@@ -446,7 +471,7 @@ async def execute_sell(
         "매도 실행: order_id=%s stock=%s price=%s qty=%s total=%s profit_loss=%s",
         order.id, stock_code, price, quantity, order_total_amount, profit_loss,
     )
-    cash = await get_cash_asset(db)
+    cash = await get_cash_asset(db, strategy_id)
     cash_amount = Decimal(str(cash.total_amount)) if cash else Decimal(0)
     order_history_logger.info(
         _format_order_log(order, decision_history, cash_amount, profit_loss=profit_loss)
@@ -459,22 +484,28 @@ async def execute_sell(
 # ---------------------------------------------------------------------------
 
 
-async def _get_prompt_template(db: AsyncSession, prompt_type: str) -> PromptTemplate | None:
+async def _get_prompt_template(db: AsyncSession, strategy_id: int, prompt_type: str) -> PromptTemplate | None:
     """DB에서 활성화된 프롬프트 템플릿을 읽는다."""
     result = await db.execute(
         select(PromptTemplate)
-        .where(PromptTemplate.prompt_type == prompt_type)
-        .where(PromptTemplate.is_active.is_(True))
+        .where(
+            PromptTemplate.strategy_id == strategy_id,
+            PromptTemplate.prompt_type == prompt_type,
+            PromptTemplate.is_active.is_(True),
+        )
         .order_by(desc(PromptTemplate.version))
         .limit(1)
     )
     return result.scalar_one_or_none()
 
 
-async def _get_target_stocks(db: AsyncSession) -> list[TargetStock]:
+async def _get_target_stocks(db: AsyncSession, strategy_id: int) -> list[TargetStock]:
     """활성화된 대상 종목 목록을 반환한다."""
     result = await db.execute(
-        select(TargetStock).where(TargetStock.is_active.is_(True))
+        select(TargetStock).where(
+            TargetStock.strategy_id == strategy_id,
+            TargetStock.is_active.is_(True),
+        )
     )
     return list(result.scalars().all())
 

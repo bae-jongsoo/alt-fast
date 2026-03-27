@@ -46,21 +46,23 @@ async def _get_latest_price(db: AsyncSession, stock_code: str) -> float:
     return float(row) if row is not None else 0.0
 
 
-async def _get_summary(db: AsyncSession) -> SummaryCard:
+async def _get_summary(db: AsyncSession, strategy_id: int | None = None) -> SummaryCard:
     now = datetime.now(KST).replace(tzinfo=None)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 현금
-    cash_row = await db.execute(
-        select(Asset).where(Asset.stock_code.is_(None)).limit(1)
-    )
+    cash_q = select(Asset).where(Asset.stock_code.is_(None))
+    if strategy_id is not None:
+        cash_q = cash_q.where(Asset.strategy_id == strategy_id)
+    cash_row = await db.execute(cash_q.limit(1))
     cash_asset = cash_row.scalar_one_or_none()
     cash_balance = float(cash_asset.total_amount) if cash_asset else 0.0
 
     # 보유종목 평가액
-    holdings_result = await db.execute(
-        select(Asset).where(Asset.stock_code.isnot(None))
-    )
+    holdings_q = select(Asset).where(Asset.stock_code.isnot(None))
+    if strategy_id is not None:
+        holdings_q = holdings_q.where(Asset.strategy_id == strategy_id)
+    holdings_result = await db.execute(holdings_q)
     holdings = holdings_result.scalars().all()
 
     eval_total = 0.0
@@ -71,26 +73,27 @@ async def _get_summary(db: AsyncSession) -> SummaryCard:
     total_asset_value = cash_balance + eval_total
 
     # 오늘 실현손익 (세후)
-    pnl_result = await db.execute(
-        select(func.coalesce(func.sum(OrderHistory.profit_loss_net), 0))
-        .where(
-            OrderHistory.order_type == "SELL",
-            OrderHistory.created_at >= today_start,
-        )
+    pnl_q = select(func.coalesce(func.sum(OrderHistory.profit_loss_net), 0)).where(
+        OrderHistory.order_type == "SELL",
+        OrderHistory.created_at >= today_start,
     )
+    if strategy_id is not None:
+        pnl_q = pnl_q.where(OrderHistory.strategy_id == strategy_id)
+    pnl_result = await db.execute(pnl_q)
     today_realized_pnl = float(pnl_result.scalar())
 
     # 오늘 거래 횟수
-    buy_count_result = await db.execute(
-        select(func.count())
-        .select_from(OrderHistory)
-        .where(OrderHistory.order_type == "BUY", OrderHistory.created_at >= today_start)
+    buy_q = select(func.count()).select_from(OrderHistory).where(
+        OrderHistory.order_type == "BUY", OrderHistory.created_at >= today_start
     )
-    sell_count_result = await db.execute(
-        select(func.count())
-        .select_from(OrderHistory)
-        .where(OrderHistory.order_type == "SELL", OrderHistory.created_at >= today_start)
+    sell_q = select(func.count()).select_from(OrderHistory).where(
+        OrderHistory.order_type == "SELL", OrderHistory.created_at >= today_start
     )
+    if strategy_id is not None:
+        buy_q = buy_q.where(OrderHistory.strategy_id == strategy_id)
+        sell_q = sell_q.where(OrderHistory.strategy_id == strategy_id)
+    buy_count_result = await db.execute(buy_q)
+    sell_count_result = await db.execute(sell_q)
     today_buy = buy_count_result.scalar() or 0
     today_sell = sell_count_result.scalar() or 0
 
@@ -107,10 +110,11 @@ async def _get_summary(db: AsyncSession) -> SummaryCard:
     )
 
 
-async def _get_holdings(db: AsyncSession) -> list[HoldingStock]:
-    result = await db.execute(
-        select(Asset).where(Asset.stock_code.isnot(None))
-    )
+async def _get_holdings(db: AsyncSession, strategy_id: int | None = None) -> list[HoldingStock]:
+    q = select(Asset).where(Asset.stock_code.isnot(None))
+    if strategy_id is not None:
+        q = q.where(Asset.strategy_id == strategy_id)
+    result = await db.execute(q)
     holdings = result.scalars().all()
 
     items = []
@@ -175,11 +179,11 @@ async def _get_system_status(db: AsyncSession) -> list[SystemStatus]:
     return statuses
 
 
-async def _get_trading_summary(db: AsyncSession) -> TradingCycleSummary:
+async def _get_trading_summary(db: AsyncSession, strategy_id: int | None = None) -> TradingCycleSummary:
     now = datetime.now(KST).replace(tzinfo=None)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    result = await db.execute(
+    q = (
         select(
             func.count().label("total"),
             func.count().filter(DecisionHistory.decision == "BUY").label("buy"),
@@ -190,6 +194,9 @@ async def _get_trading_summary(db: AsyncSession) -> TradingCycleSummary:
         .select_from(DecisionHistory)
         .where(DecisionHistory.created_at >= today_start)
     )
+    if strategy_id is not None:
+        q = q.where(DecisionHistory.strategy_id == strategy_id)
+    result = await db.execute(q)
     row = result.one()
     return TradingCycleSummary(
         total_decisions=row.total,
@@ -200,12 +207,11 @@ async def _get_trading_summary(db: AsyncSession) -> TradingCycleSummary:
     )
 
 
-async def _get_recent_orders(db: AsyncSession) -> list[RecentOrder]:
-    result = await db.execute(
-        select(OrderHistory)
-        .order_by(OrderHistory.created_at.desc())
-        .limit(5)
-    )
+async def _get_recent_orders(db: AsyncSession, strategy_id: int | None = None) -> list[RecentOrder]:
+    q = select(OrderHistory)
+    if strategy_id is not None:
+        q = q.where(OrderHistory.strategy_id == strategy_id)
+    result = await db.execute(q.order_by(OrderHistory.created_at.desc()).limit(5))
     orders = result.scalars().all()
     return [
         RecentOrder(
@@ -223,13 +229,11 @@ async def _get_recent_orders(db: AsyncSession) -> list[RecentOrder]:
     ]
 
 
-async def _get_recent_errors(db: AsyncSession) -> list[RecentError]:
-    result = await db.execute(
-        select(DecisionHistory)
-        .where(DecisionHistory.is_error.is_(True))
-        .order_by(DecisionHistory.created_at.desc())
-        .limit(3)
-    )
+async def _get_recent_errors(db: AsyncSession, strategy_id: int | None = None) -> list[RecentError]:
+    q = select(DecisionHistory).where(DecisionHistory.is_error.is_(True))
+    if strategy_id is not None:
+        q = q.where(DecisionHistory.strategy_id == strategy_id)
+    result = await db.execute(q.order_by(DecisionHistory.created_at.desc()).limit(3))
     errors = result.scalars().all()
     return [
         RecentError(
@@ -241,13 +245,13 @@ async def _get_recent_errors(db: AsyncSession) -> list[RecentError]:
     ]
 
 
-async def get_dashboard(db: AsyncSession) -> DashboardResponse:
-    summary = await _get_summary(db)
-    holdings = await _get_holdings(db)
+async def get_dashboard(db: AsyncSession, strategy_id: int | None = None) -> DashboardResponse:
+    summary = await _get_summary(db, strategy_id)
+    holdings = await _get_holdings(db, strategy_id)
     system_status = await _get_system_status(db)
-    trading_summary = await _get_trading_summary(db)
-    recent_orders = await _get_recent_orders(db)
-    recent_errors = await _get_recent_errors(db)
+    trading_summary = await _get_trading_summary(db, strategy_id)
+    recent_orders = await _get_recent_orders(db, strategy_id)
+    recent_errors = await _get_recent_errors(db, strategy_id)
 
     return DashboardResponse(
         summary=summary,

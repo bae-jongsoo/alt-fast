@@ -17,6 +17,7 @@ export interface TargetStockListResponse {
 }
 
 export interface TargetStockCreate {
+  strategy_id: number;
   stock_code: string;
   stock_name: string;
   dart_corp_code?: string | null;
@@ -54,10 +55,13 @@ export interface SystemParameterListResponse {
 
 // ── 종목 설정 훅 ──
 
-export function useTargetStocks() {
+export function useTargetStocks(strategyId?: number | null) {
+  const params: Record<string, unknown> = {};
+  if (strategyId != null) params.strategy_id = strategyId;
+
   return useQuery<TargetStockListResponse>({
-    queryKey: ["settings", "stocks"],
-    queryFn: () => api.get("/settings/stocks").then((res) => res.data),
+    queryKey: ["settings", "stocks", strategyId ?? "all"],
+    queryFn: () => api.get("/settings/stocks", { params }).then((res) => res.data),
   });
 }
 
@@ -85,10 +89,13 @@ export function useDeleteStock() {
 
 // ── 프롬프트 설정 훅 ──
 
-export function usePrompts() {
+export function usePrompts(strategyId?: number | null) {
+  const params: Record<string, unknown> = {};
+  if (strategyId != null) params.strategy_id = strategyId;
+
   return useQuery<PromptTemplateListResponse>({
-    queryKey: ["settings", "prompts"],
-    queryFn: () => api.get("/settings/prompts").then((res) => res.data),
+    queryKey: ["settings", "prompts", strategyId ?? "all"],
+    queryFn: () => api.get("/settings/prompts", { params }).then((res) => res.data),
   });
 }
 
@@ -106,12 +113,16 @@ export function useUpdatePrompt() {
     mutationFn: ({
       promptType,
       content,
+      strategyId,
     }: {
       promptType: string;
       content: string;
+      strategyId?: number;
     }) =>
       api
-        .put(`/settings/prompts/${promptType}`, { content })
+        .put(`/settings/prompts/${promptType}`, { content }, {
+          params: strategyId != null ? { strategy_id: strategyId } : undefined,
+        })
         .then((res) => res.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings", "prompts"] });

@@ -10,6 +10,9 @@ class OrderHistory(Base):
     __tablename__ = "order_histories"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategies.id", ondelete="RESTRICT")
+    )
     decision_history_id: Mapped[int] = mapped_column(
         ForeignKey("decision_histories.id", ondelete="CASCADE")
     )
@@ -34,6 +37,8 @@ class OrderHistory(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     __table_args__ = (
+        Index("ix_order_histories_strategy_id_created_at", "strategy_id", "created_at"),
+        Index("ix_order_histories_strategy_id_stock_code_created_at", "strategy_id", "stock_code", "created_at"),
         Index("ix_order_histories_stock_code", "stock_code"),
         Index("ix_order_histories_order_placed_at", "order_placed_at"),
         Index("ix_order_histories_result_executed_at", "result_executed_at"),

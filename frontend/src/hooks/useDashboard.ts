@@ -66,10 +66,13 @@ export interface DashboardResponse {
   last_updated_at: string;
 }
 
-export function useDashboard() {
+export function useDashboard(strategyId?: number | null) {
+  const params: Record<string, unknown> = {};
+  if (strategyId != null) params.strategy_id = strategyId;
+
   return useQuery<DashboardResponse>({
-    queryKey: ["dashboard"],
-    queryFn: () => api.get("/dashboard").then((res) => res.data),
+    queryKey: ["dashboard", strategyId ?? "all"],
+    queryFn: () => api.get("/dashboard", { params }).then((res) => res.data),
     refetchInterval: 30000,
   });
 }

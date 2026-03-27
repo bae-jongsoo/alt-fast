@@ -15,6 +15,7 @@ class TargetStockItem(BaseModel):
 
 
 class TargetStockCreate(BaseModel):
+    strategy_id: int
     stock_code: str
     stock_name: str
     dart_corp_code: str | None = None

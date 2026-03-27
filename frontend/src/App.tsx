@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/hooks/useAuth";
+import { StrategyProvider } from "@/hooks/useStrategy";
 import Layout from "@/components/layout/Layout";
 import DashboardPage from "@/pages/DashboardPage";
 import TradesPage from "@/pages/TradesPage";
@@ -25,6 +26,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
+          <StrategyProvider>
           <Routes>
             <Route element={<Layout />}>
               <Route path="/" element={<DashboardPage />} />
@@ -38,6 +40,7 @@ function App() {
             {/* 존재하지 않는 경로 → 대시보드로 리다이렉트 */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </StrategyProvider>
           <Toaster position="top-right" />
         </AuthProvider>
       </BrowserRouter>

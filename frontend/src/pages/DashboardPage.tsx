@@ -1,5 +1,6 @@
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useDashboard } from "@/hooks/useDashboard";
+import { useStrategyContext } from "@/hooks/useStrategy";
 import { format } from "date-fns";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,12 +8,19 @@ import SummaryCards from "@/components/dashboard/SummaryCards";
 import HoldingsTable from "@/components/dashboard/HoldingsTable";
 import SystemStatus from "@/components/dashboard/SystemStatus";
 import RecentActivity from "@/components/dashboard/RecentActivity";
+import StrategyOverview from "@/components/dashboard/StrategyOverview";
 
 export default function DashboardPage() {
   usePageTitle("ALT | 대시보드");
 
+  const { selectedStrategyId } = useStrategyContext();
   const { data, isLoading, isError, refetch, isFetching, dataUpdatedAt } =
-    useDashboard();
+    useDashboard(selectedStrategyId);
+
+  // "전체" 선택 시 전략별 오버뷰 표시
+  if (selectedStrategyId === null) {
+    return <StrategyOverview />;
+  }
 
   // 에러 상태
   if (isError && !data) {

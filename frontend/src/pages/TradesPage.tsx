@@ -15,6 +15,7 @@ import {
   type OrderFilters,
   type DecisionFilters,
 } from "@/hooks/useTrades";
+import { useStrategyContext } from "@/hooks/useStrategy";
 
 export default function TradesPage() {
   usePageTitle("ALT | 매매이력");
@@ -33,6 +34,7 @@ export default function TradesPage() {
   const [orderPage, setOrderPage] = useState(1);
   const [decisionPage, setDecisionPage] = useState(1);
 
+  const { selectedStrategyId } = useStrategyContext();
 
   // 주문 이력 필터 구성
   const orderFilters: OrderFilters = {
@@ -42,6 +44,7 @@ export default function TradesPage() {
     end_date: endDate || undefined,
     order_type: resultFilter !== "all" ? resultFilter : undefined,
     stock_code: stockCode !== "all" ? stockCode : undefined,
+    strategy_id: selectedStrategyId ?? undefined,
   };
 
   // 판단 이력 필터 구성
@@ -56,6 +59,7 @@ export default function TradesPage() {
         : undefined,
     stock_code: stockCode !== "all" ? stockCode : undefined,
     errors_only: resultFilter === "errors_only" ? true : undefined,
+    strategy_id: selectedStrategyId ?? undefined,
   };
 
   // API 호출

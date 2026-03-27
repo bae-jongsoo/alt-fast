@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { NavLink, Link } from "react-router-dom";
-import { Moon, Sun, Menu, X, User, LogOut } from "lucide-react";
+import { Moon, Sun, Menu, X, User, LogOut, ChevronDown } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/useAuth";
+import { useStrategyContext } from "@/hooks/useStrategy";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -46,6 +47,39 @@ function NavLinkItem({
   );
 }
 
+function StrategySelector() {
+  const { selectedStrategyId, setSelectedStrategyId, strategies, selectedStrategy } =
+    useStrategyContext();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-sm font-medium hover:bg-accent transition-colors cursor-pointer">
+        {selectedStrategy ? selectedStrategy.name : "전체"}
+        <ChevronDown className="size-3.5 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={8}>
+        <DropdownMenuItem
+          onClick={() => setSelectedStrategyId(null)}
+          className={selectedStrategyId === null ? "bg-accent" : ""}
+        >
+          전체
+        </DropdownMenuItem>
+        {strategies
+          .filter((s) => s.is_active)
+          .map((s) => (
+            <DropdownMenuItem
+              key={s.id}
+              onClick={() => setSelectedStrategyId(s.id)}
+              className={selectedStrategyId === s.id ? "bg-accent" : ""}
+            >
+              {s.name}
+            </DropdownMenuItem>
+          ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export default function Navbar() {
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -63,14 +97,17 @@ export default function Navbar() {
       aria-label="메인 네비게이션"
     >
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
-        {/* 좌측: 로고 */}
-        <Link
-          to="/"
-          className="text-lg font-bold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          aria-label="ALT 홈으로 이동"
-        >
-          ALT
-        </Link>
+        {/* 좌측: 로고 + 전략 셀렉터 */}
+        <div className="flex items-center gap-3">
+          <Link
+            to="/"
+            className="text-lg font-bold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            aria-label="ALT 홈으로 이동"
+          >
+            ALT
+          </Link>
+          <StrategySelector />
+        </div>
 
         {/* 중앙: 데스크톱 네비게이션 */}
         <div className="hidden md:flex items-center gap-1" role="menubar">
@@ -145,6 +182,10 @@ export default function Navbar() {
           role="menu"
         >
           <div className="flex flex-col gap-1 p-4">
+            <div className="px-3 py-2">
+              <StrategySelector />
+            </div>
+            <div className="my-2 h-px bg-border" role="separator" />
             {navItems.map((item) => (
               <NavLinkItem
                 key={item.to}

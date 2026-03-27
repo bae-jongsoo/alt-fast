@@ -80,6 +80,7 @@ export interface OrderFilters {
   end_date?: string;
   order_type?: string;
   stock_code?: string;
+  strategy_id?: number;
 }
 
 export interface DecisionFilters {
@@ -90,6 +91,7 @@ export interface DecisionFilters {
   decision?: string;
   stock_code?: string;
   errors_only?: boolean;
+  strategy_id?: number;
 }
 
 // --- API 훅 ---

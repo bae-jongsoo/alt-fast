@@ -130,12 +130,11 @@ def _validate_parameter(key: str, value: str) -> None:
 # ──────────────────────────────────────────────
 
 
-async def get_stocks(db: AsyncSession) -> TargetStockListResponse:
-    result = await db.execute(
-        select(TargetStock)
-        .where(TargetStock.is_active.is_(True))
-        .order_by(TargetStock.stock_code.asc())
-    )
+async def get_stocks(db: AsyncSession, strategy_id: int | None = None) -> TargetStockListResponse:
+    q = select(TargetStock).where(TargetStock.is_active.is_(True))
+    if strategy_id is not None:
+        q = q.where(TargetStock.strategy_id == strategy_id)
+    result = await db.execute(q.order_by(TargetStock.stock_code.asc()))
     stocks = result.scalars().all()
 
     items: list[TargetStockItem] = []
@@ -155,12 +154,13 @@ async def get_stocks(db: AsyncSession) -> TargetStockListResponse:
 
 
 async def create_stock(
-    db: AsyncSession, data: TargetStockCreate
+    db: AsyncSession, data: TargetStockCreate, strategy_id: int | None = None
 ) -> TargetStockItem:
-    # 중복 체크 (활성/비활성 모두)
-    existing = await db.execute(
-        select(TargetStock).where(TargetStock.stock_code == data.stock_code)
-    )
+    # 중복 체크 (활성/비활성 모두, 전략 범위 내)
+    q = select(TargetStock).where(TargetStock.stock_code == data.stock_code)
+    if strategy_id is not None:
+        q = q.where(TargetStock.strategy_id == strategy_id)
+    existing = await db.execute(q)
     existing_stock = existing.scalar_one_or_none()
 
     if existing_stock is not None:
@@ -178,6 +178,7 @@ async def create_stock(
         stock = existing_stock
     else:
         stock = TargetStock(
+            strategy_id=strategy_id or data.strategy_id,
             stock_code=data.stock_code,
             stock_name=data.stock_name,
             dart_corp_code=data.dart_corp_code,
@@ -196,13 +197,14 @@ async def create_stock(
     )
 
 
-async def delete_stock(db: AsyncSession, stock_code: str) -> None:
-    result = await db.execute(
-        select(TargetStock).where(
-            TargetStock.stock_code == stock_code,
-            TargetStock.is_active.is_(True),
-        )
+async def delete_stock(db: AsyncSession, stock_code: str, strategy_id: int | None = None) -> None:
+    q = select(TargetStock).where(
+        TargetStock.stock_code == stock_code,
+        TargetStock.is_active.is_(True),
     )
+    if strategy_id is not None:
+        q = q.where(TargetStock.strategy_id == strategy_id)
+    result = await db.execute(q)
     stock = result.scalar_one_or_none()
     if stock is None:
         raise HTTPException(
@@ -219,11 +221,12 @@ async def delete_stock(db: AsyncSession, stock_code: str) -> None:
 # ──────────────────────────────────────────────
 
 
-async def get_prompts(db: AsyncSession) -> PromptTemplateListResponse:
+async def get_prompts(db: AsyncSession, strategy_id: int | None = None) -> PromptTemplateListResponse:
     # 활성 프롬프트
-    active_result = await db.execute(
-        select(PromptTemplate).where(PromptTemplate.is_active.is_(True))
-    )
+    active_q = select(PromptTemplate).where(PromptTemplate.is_active.is_(True))
+    if strategy_id is not None:
+        active_q = active_q.where(PromptTemplate.strategy_id == strategy_id)
+    active_result = await db.execute(active_q)
     active_prompts = active_result.scalars().all()
 
     buy_prompt = None
@@ -243,17 +246,16 @@ async def get_prompts(db: AsyncSession) -> PromptTemplateListResponse:
             sell_prompt = item
 
     # 버전 이력 (각 타입별 최근 10개)
+    buy_v_q = select(PromptTemplate).where(PromptTemplate.prompt_type == "buy")
+    sell_v_q = select(PromptTemplate).where(PromptTemplate.prompt_type == "sell")
+    if strategy_id is not None:
+        buy_v_q = buy_v_q.where(PromptTemplate.strategy_id == strategy_id)
+        sell_v_q = sell_v_q.where(PromptTemplate.strategy_id == strategy_id)
     buy_versions_result = await db.execute(
-        select(PromptTemplate)
-        .where(PromptTemplate.prompt_type == "buy")
-        .order_by(PromptTemplate.version.desc())
-        .limit(10)
+        buy_v_q.order_by(PromptTemplate.version.desc()).limit(10)
     )
     sell_versions_result = await db.execute(
-        select(PromptTemplate)
-        .where(PromptTemplate.prompt_type == "sell")
-        .order_by(PromptTemplate.version.desc())
-        .limit(10)
+        sell_v_q.order_by(PromptTemplate.version.desc()).limit(10)
     )
 
     def to_items(rows) -> list[PromptTemplateItem]:
@@ -278,7 +280,7 @@ async def get_prompts(db: AsyncSession) -> PromptTemplateListResponse:
 
 
 async def update_prompt(
-    db: AsyncSession, prompt_type: str, data: PromptTemplateUpdate
+    db: AsyncSession, prompt_type: str, data: PromptTemplateUpdate, strategy_id: int | None = None
 ) -> PromptTemplateItem:
     if prompt_type not in ("buy", "sell"):
         raise HTTPException(
@@ -287,25 +289,28 @@ async def update_prompt(
         )
 
     # 기존 활성 프롬프트 비활성화 및 최대 버전 조회
-    current = await db.execute(
-        select(PromptTemplate).where(
-            PromptTemplate.prompt_type == prompt_type,
-            PromptTemplate.is_active.is_(True),
-        )
+    current_q = select(PromptTemplate).where(
+        PromptTemplate.prompt_type == prompt_type,
+        PromptTemplate.is_active.is_(True),
     )
+    max_q = select(func.max(PromptTemplate.version)).where(
+        PromptTemplate.prompt_type == prompt_type
+    )
+    if strategy_id is not None:
+        current_q = current_q.where(PromptTemplate.strategy_id == strategy_id)
+        max_q = max_q.where(PromptTemplate.strategy_id == strategy_id)
+
+    current = await db.execute(current_q)
     current_prompt = current.scalar_one_or_none()
 
-    max_version_result = await db.execute(
-        select(func.max(PromptTemplate.version)).where(
-            PromptTemplate.prompt_type == prompt_type
-        )
-    )
+    max_version_result = await db.execute(max_q)
     max_version = max_version_result.scalar() or 0
 
     if current_prompt:
         current_prompt.is_active = False
 
     new_prompt = PromptTemplate(
+        strategy_id=strategy_id or current_prompt.strategy_id,
         prompt_type=prompt_type,
         content=data.content,
         version=max_version + 1,
