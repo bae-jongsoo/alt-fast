@@ -337,6 +337,107 @@ def review_daily(
     asyncio.run(_run())
 
 
+@review_app.command("report")
+def review_report(
+    date: Optional[str] = typer.Option(
+        None, "--date", help="대상 날짜 (YYYY-MM-DD, KST). 미지정 시 오늘"
+    ),
+    detail: bool = typer.Option(False, "--detail", help="상세 모드"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="전송 없이 터미널 출력만"),
+    llm_review: bool = typer.Option(False, "--llm-review", help="LLM 종합 리뷰 포함"),
+) -> None:
+    """일일 보고서 생성 + 텔레그램 전송."""
+
+    async def _run() -> None:
+        from datetime import date as date_type, datetime as dt_type
+        from zoneinfo import ZoneInfo
+
+        from app.database import async_session
+        from app.services.report import generate_daily_report
+        from app.services.report.formatter import (
+            format_cli_output,
+            send_report_telegram,
+        )
+
+        kst = ZoneInfo("Asia/Seoul")
+        if date:
+            target = dt_type.fromisoformat(date).date()
+        else:
+            target = dt_type.now(tz=kst).date()
+
+        async with async_session() as session:
+            report = await generate_daily_report(session, target)
+
+        if dry_run:
+            typer.echo(format_cli_output(report, detail=detail))
+        else:
+            ok = await send_report_telegram(report, detail=detail)
+            if ok:
+                typer.echo(f"보고서 텔레그램 전송 완료: {target} ({'상세' if detail else '간결'} 모드)")
+            else:
+                typer.echo("텔레그램 전송 실패. --dry-run으로 터미널 출력을 확인하세요.", err=True)
+
+        if llm_review:
+            from app.services.report.llm_review import generate_llm_review
+
+            typer.echo("\n--- LLM 종합 리뷰 ---")
+            review_text = await generate_llm_review(report)
+            if review_text:
+                typer.echo(review_text)
+            else:
+                typer.echo("LLM 리뷰 생성에 실패했습니다.", err=True)
+
+    asyncio.run(_run())
+
+
+@review_app.command("report-scheduler")
+def review_report_scheduler() -> None:
+    """16:00 트리거 — 보고서 생성 + 간결 모드 텔레그램 자동 전송."""
+
+    async def _run() -> None:
+        from zoneinfo import ZoneInfo
+
+        from app.database import async_session
+        from app.services.report import generate_daily_report
+        from app.services.report.formatter import send_report_telegram
+
+        kst = ZoneInfo("Asia/Seoul")
+        typer.echo("보고서 스케줄러 시작...")
+
+        while True:
+            now = datetime.now(tz=kst)
+            target_time = now.replace(hour=16, minute=0, second=0, microsecond=0)
+
+            if now.time() < dt_time(16, 0):
+                wait_seconds = (target_time - now).total_seconds()
+                typer.echo(f"16:00까지 {int(wait_seconds)}초 대기...")
+                await asyncio.sleep(wait_seconds)
+
+            typer.echo(f"보고서 생성 + 전송: {datetime.now(tz=kst).isoformat()}")
+            try:
+                target_date = datetime.now(tz=kst).date()
+                async with async_session() as session:
+                    report = await generate_daily_report(session, target_date)
+                ok = await send_report_telegram(report, detail=False)
+                if ok:
+                    typer.echo(f"보고서 전송 완료: {target_date}")
+                else:
+                    typer.echo("보고서 텔레그램 전송 실패", err=True)
+            except Exception as exc:
+                typer.echo(f"보고서 생성/전송 오류: {exc}", err=True)
+
+            # 다음 날 16:00까지 대기
+            now = datetime.now(tz=kst)
+            next_run = (now + timedelta(days=1)).replace(
+                hour=16, minute=0, second=0, microsecond=0
+            )
+            wait_seconds = (next_run - now).total_seconds()
+            typer.echo(f"다음 실행까지 {int(wait_seconds)}초 대기...")
+            await asyncio.sleep(wait_seconds)
+
+    asyncio.run(_run())
+
+
 # ── backfill ─────────────────────────────────────────────────────
 
 @backfill_app.command("candles")
