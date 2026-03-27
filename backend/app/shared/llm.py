@@ -20,6 +20,10 @@ class LLMAuthError(RuntimeError):
     pass
 
 
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 2  # seconds
+
+
 async def ask_llm(prompt: str, timeout_seconds: int = 60) -> str:
     """openclaw agent --local로 LLM을 호출하고 응답 텍스트를 반환한다. (gpt-5.2)"""
     session_id = str(uuid.uuid4())
@@ -121,11 +125,31 @@ async def ask_llm_high(prompt: str, timeout_seconds: int = 120) -> str:
     return stdout
 
 
+async def _call_with_retry(fn, prompt: str, timeout_seconds: int, label: str) -> str:
+    """LLM 호출을 재시도한다. LLMAuthError는 즉시 전파."""
+    last_error: Exception | None = None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            return await fn(prompt, timeout_seconds=timeout_seconds)
+        except LLMAuthError:
+            raise
+        except Exception as e:
+            last_error = e
+            if attempt < _MAX_RETRIES:
+                delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                logger.warning(
+                    "%s 호출 실패 (시도 %d/%d), %d초 후 재시도: %s",
+                    label, attempt, _MAX_RETRIES, delay, e,
+                )
+                await asyncio.sleep(delay)
+    raise last_error  # type: ignore[misc]
+
+
 async def ask_llm_by_level(level: str, prompt: str, timeout_seconds: int = 120) -> str:
-    """level에 따라 적절한 LLM을 호출한다. (normal/high)"""
+    """level에 따라 적절한 LLM을 호출한다. (normal/high) — 실패 시 자동 재시도."""
     if level == "high":
-        return await ask_llm_high(prompt, timeout_seconds=timeout_seconds)
-    return await ask_llm(prompt, timeout_seconds=timeout_seconds)
+        return await _call_with_retry(ask_llm_high, prompt, timeout_seconds, "LLM(high)")
+    return await _call_with_retry(ask_llm, prompt, timeout_seconds, "LLM")
 
 
 async def get_llm_level(param_key: str, default: str = "normal") -> str:
