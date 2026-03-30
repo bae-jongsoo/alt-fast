@@ -25,6 +25,14 @@ start:
 stop:
 	$(SCTL) -c $(CONF) shutdown
 
+# 이벤트 트레이더만 재시작
+restart-event-trader:
+	$(SCTL) -c $(CONF) restart traders:trader-event
+
+# 로그 (이벤트 트레이더)
+log-event-trader:
+	tail -f /var/log/alt-fast/trader-event.log /var/log/alt-fast/trader-event.err.log
+
 # 로그 (API)
 log-api:
 	tail -f /var/log/alt-fast/api.err.log
@@ -57,4 +65,4 @@ db:
 shell:
 	cd backend && .venv/bin/ipython -i shell.py
 
-.PHONY: status restart restart-api restart-collectors start stop log-api log-deploy log-collectors deploy build-front nginx-reload db shell
+.PHONY: status restart restart-api restart-collectors restart-event-trader start stop log-api log-event-trader log-deploy log-collectors deploy build-front nginx-reload db shell

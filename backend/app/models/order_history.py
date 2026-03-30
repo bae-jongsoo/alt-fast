@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Numeric, String, func
+from sqlalchemy import ForeignKey, Index, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -32,6 +32,12 @@ class OrderHistory(Base):
     profit_rate: Mapped[float | None] = mapped_column(nullable=True)
     profit_loss_net: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)
     profit_rate_net: Mapped[float | None] = mapped_column(nullable=True)
+    event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trading_events.id", ondelete="SET NULL"), nullable=True
+    )
+    target_return_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    stop_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    holding_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order_placed_at: Mapped[datetime] = mapped_column(server_default=func.now())
     result_executed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -44,4 +50,5 @@ class OrderHistory(Base):
         Index("ix_order_histories_result_executed_at", "result_executed_at"),
         Index("ix_order_histories_created_at", "created_at"),
         Index("ix_order_histories_stock_code_created_at", "stock_code", "created_at"),
+        Index("ix_order_histories_event_id", "event_id"),
     )

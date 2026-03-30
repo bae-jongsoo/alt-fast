@@ -341,7 +341,9 @@ def get_prompt_variables() -> dict[str, list[str]]:
 
 async def get_parameters(db: AsyncSession) -> SystemParameterListResponse:
     result = await db.execute(
-        select(SystemParameter).order_by(SystemParameter.key.asc())
+        select(SystemParameter)
+        .where(SystemParameter.strategy_id.is_(None))
+        .order_by(SystemParameter.key.asc())
     )
     params = result.scalars().all()
 
@@ -365,7 +367,10 @@ async def update_parameters(
 
     for key, value in data.parameters.items():
         result = await db.execute(
-            select(SystemParameter).where(SystemParameter.key == key)
+            select(SystemParameter).where(
+                SystemParameter.key == key,
+                SystemParameter.strategy_id.is_(None),
+            )
         )
         param = result.scalar_one_or_none()
         if param:
@@ -381,7 +386,10 @@ async def update_parameters(
 async def reset_parameters(db: AsyncSession) -> SystemParameterListResponse:
     for key, default_value in DEFAULT_PARAMETERS.items():
         result = await db.execute(
-            select(SystemParameter).where(SystemParameter.key == key)
+            select(SystemParameter).where(
+                SystemParameter.key == key,
+                SystemParameter.strategy_id.is_(None),
+            )
         )
         param = result.scalar_one_or_none()
         if param:
@@ -398,7 +406,10 @@ async def seed_default_parameters(db: AsyncSession) -> None:
     """앱 시작 시 기본 파라미터가 없으면 생성"""
     for key, default_value in DEFAULT_PARAMETERS.items():
         result = await db.execute(
-            select(SystemParameter).where(SystemParameter.key == key)
+            select(SystemParameter).where(
+                SystemParameter.key == key,
+                SystemParameter.strategy_id.is_(None),
+            )
         )
         if result.scalar_one_or_none() is None:
             db.add(SystemParameter(key=key, value=default_value))

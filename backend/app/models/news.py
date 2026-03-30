@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Index, String, Text, func
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -18,6 +18,9 @@ class News(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     useful: Mapped[bool | None] = mapped_column(nullable=True)
+    cluster_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("news_clusters.id"), nullable=True
+    )
     published_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

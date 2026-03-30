@@ -40,6 +40,9 @@ app.add_typer(db_app, name="db")
 backfill_app = typer.Typer(help="데이터 보충 관련 명령어")
 app.add_typer(backfill_app, name="backfill")
 
+macro_app = typer.Typer(help="매크로 데이터 관련 명령어")
+app.add_typer(macro_app, name="macro")
+
 review_app = typer.Typer(help="일일 회고/리포트")
 app.add_typer(review_app, name="review")
 
@@ -60,7 +63,10 @@ async def _get_system_param(session, key: str, default: str) -> str:
     from app.models.system_parameter import SystemParameter
 
     result = await session.execute(
-        select(SystemParameter.value).where(SystemParameter.key == key)
+        select(SystemParameter.value).where(
+            SystemParameter.key == key,
+            SystemParameter.strategy_id.is_(None),
+        )
     )
     row = result.scalar_one_or_none()
     return row if row is not None else default
@@ -138,6 +144,52 @@ def trader_run(
                     typer.echo(f"트레이딩 사이클 오류: {exc}", err=True)
 
             await asyncio.sleep(interval)
+
+    asyncio.run(_run())
+
+
+@trader_app.command("run-event")
+def trader_run_event(
+    strategy: str = typer.Option(
+        "event_trader", "--strategy", help="이벤트 트레이더 전략 이름"
+    ),
+) -> None:
+    """이벤트 기반 트레이더 실행."""
+
+    async def _run() -> None:
+        from app.services.event_trader import run_event_trader
+
+        typer.echo(f"이벤트 트레이더 시작... (전략: {strategy})")
+        await run_event_trader(strategy_name=strategy)
+
+    asyncio.run(_run())
+
+
+@trader_app.command("init-event-strategy")
+def trader_init_event_strategy(
+    strategy: str = typer.Option(
+        "event_trader", "--strategy", help="이벤트 트레이더 전략 이름"
+    ),
+    capital: int = typer.Option(
+        10_000_000, "--capital", help="초기 자본금 (원)"
+    ),
+) -> None:
+    """이벤트 트레이더 전략 초기화 (멱등)."""
+
+    async def _run() -> None:
+        from decimal import Decimal
+
+        from app.database import async_session
+        from app.services.event_trader import init_event_strategy
+
+        typer.echo(f"이벤트 전략 초기화... (전략: {strategy}, 자본금: {capital:,}원)")
+        async with async_session() as session:
+            result = await init_event_strategy(
+                session,
+                strategy_name=strategy,
+                initial_capital=Decimal(str(capital)),
+            )
+            typer.echo(f"전략 초기화 완료: id={result.id} name={result.name}")
 
     asyncio.run(_run())
 
@@ -223,14 +275,21 @@ def dart_collect(
         typer.echo("DART 공시 수집 시작...")
         while True:
             async with async_session() as session:
-                interval = int(await _get_system_param(session, "dart_interval", "600"))
+                interval = int(await _get_system_param(session, "dart_collect_interval", "600"))
+                market_start = await _get_system_param(session, "market_start_time", "09:00")
+                market_end = await _get_system_param(session, "market_end_time", "15:30")
+
+                if _is_market_open(market_start, market_end):
+                    interval = int(await _get_system_param(session, "dart_collect_interval_market_hours", "600"))
+
                 codes = _parse_stock_codes(stock_codes)
 
                 try:
                     results = await collect_dart(session, stock_codes=codes)
                     typer.echo(
                         f"DART 공시 수집 완료: {len(results['stock_codes'])}종목, "
-                        f"fetched={results['fetched_items']}, saved={results['saved_items']}"
+                        f"fetched={results['fetched_items']}, saved={results['saved_items']}, "
+                        f"new={results['new_items']}"
                     )
                 except Exception as exc:
                     typer.echo(f"DART 공시 수집 오류: {exc}", err=True)
@@ -443,6 +502,42 @@ def review_report_scheduler() -> None:
     asyncio.run(_run())
 
 
+# ── macro ───────────────────────────────────────────────────────
+
+@macro_app.command("collect")
+def macro_collect() -> None:
+    """매크로 데이터 즉시 1회 수집."""
+
+    async def _run() -> None:
+        from app.database import async_session
+        from app.services.macro_collector import collect_macro_snapshot
+
+        typer.echo("매크로 데이터 수집 시작...")
+        try:
+            async with async_session() as session:
+                snapshot = await collect_macro_snapshot(session)
+                typer.echo(
+                    f"매크로 수집 완료: id={snapshot.id}, date={snapshot.snapshot_date}"
+                )
+        except Exception as exc:
+            typer.echo(f"매크로 수집 오류: {exc}", err=True)
+
+    asyncio.run(_run())
+
+
+@macro_app.command("collect-scheduler")
+def macro_collect_scheduler() -> None:
+    """매크로 수집 스케줄러 모드 (08:30, 12:00)."""
+
+    async def _run() -> None:
+        from app.services.macro_collector import run_macro_collector
+
+        typer.echo("매크로 수집 스케줄러 시작...")
+        await run_macro_collector()
+
+    asyncio.run(_run())
+
+
 # ── backfill ─────────────────────────────────────────────────────
 
 @backfill_app.command("candles")
@@ -478,6 +573,188 @@ def backfill_candles(
                 f"inserted={results['inserted']}, "
                 f"skipped={results['skipped']}"
             )
+
+    asyncio.run(_run())
+
+
+@backfill_app.command("macro")
+def backfill_macro_cmd(
+    start: str = typer.Option(..., "--start", help="시작 날짜 (YYYY-MM-DD)"),
+    end: str = typer.Option(..., "--end", help="종료 날짜 (YYYY-MM-DD)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="수집 대상 건수만 출력"),
+) -> None:
+    """매크로 데이터 기간별 백필."""
+
+    async def _run() -> None:
+        from datetime import date as date_type
+
+        from app.database import async_session
+        from app.services.macro_collector import backfill_macro, get_backfill_state
+
+        start_date = date_type.fromisoformat(start)
+        end_date = date_type.fromisoformat(end)
+
+        async with async_session() as session:
+            # 이전 진행 상태 확인
+            last_date_str = await get_backfill_state(session, "backfill_macro_last_date")
+            if last_date_str and not dry_run:
+                last_date = date_type.fromisoformat(last_date_str)
+                if last_date > start_date and last_date < end_date:
+                    typer.echo(f"이전 진행 상태 발견: {last_date_str}, 이어서 수집합니다.")
+                    start_date = last_date + timedelta(days=1)
+
+            result = await backfill_macro(session, start_date, end_date, dry_run=dry_run)
+
+        if dry_run:
+            typer.echo(
+                f"[DRY RUN] 매크로 백필 대상: "
+                f"total_days={result['total_days']}, "
+                f"existing={result['existing']}, "
+                f"to_fetch={result['to_fetch']}"
+            )
+        else:
+            typer.echo(
+                f"매크로 백필 완료: "
+                f"inserted={result['inserted']}, "
+                f"updated={result['updated']}, "
+                f"skipped={result['skipped']}"
+            )
+
+    asyncio.run(_run())
+
+
+@backfill_app.command("dart")
+def backfill_dart_cmd(
+    start: str = typer.Option(..., "--start", help="시작 날짜 (YYYY-MM-DD)"),
+    end: str = typer.Option(..., "--end", help="종료 날짜 (YYYY-MM-DD)"),
+    stock_codes: Optional[str] = typer.Option(
+        None, "--stock-codes", help="쉼표 구분 종목코드 (미지정 시 TargetStock 전체)"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="수집 대상 건수만 출력"),
+) -> None:
+    """DART 공시 기간별 백필."""
+
+    async def _run() -> None:
+        from app.database import async_session
+        from app.services.dart_collector import backfill_dart
+
+        start_dt = datetime.fromisoformat(start)
+        end_dt = datetime.fromisoformat(end)
+        codes = _parse_stock_codes(stock_codes)
+
+        async with async_session() as session:
+            result = await backfill_dart(session, start_dt, end_dt, stock_codes=codes, dry_run=dry_run)
+
+        if dry_run:
+            typer.echo(
+                f"[DRY RUN] DART 백필 대상: "
+                f"stock_codes={result['stock_codes']}, "
+                f"total_days={result.get('total_days', 'N/A')}"
+            )
+        else:
+            typer.echo(
+                f"DART 백필 완료: "
+                f"fetched={result['fetched']}, "
+                f"saved={result['saved']}, "
+                f"new={result['new']}"
+            )
+
+    asyncio.run(_run())
+
+
+@backfill_app.command("news")
+def backfill_news_cmd(
+    start: str = typer.Option(..., "--start", help="시작 날짜 (YYYY-MM-DD)"),
+    end: str = typer.Option(..., "--end", help="종료 날짜 (YYYY-MM-DD)"),
+    stock_codes: Optional[str] = typer.Option(
+        None, "--stock-codes", help="쉼표 구분 종목코드 (미지정 시 TargetStock 전체)"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="수집 대상 건수만 출력"),
+) -> None:
+    """뉴스 기간별 백필."""
+
+    async def _run() -> None:
+        from datetime import date as date_type
+
+        from app.database import async_session
+        from app.services.news_collector import backfill_news
+
+        start_date = date_type.fromisoformat(start)
+        end_date = date_type.fromisoformat(end)
+        codes = _parse_stock_codes(stock_codes)
+
+        async with async_session() as session:
+            result = await backfill_news(session, start_date, end_date, stock_codes=codes, dry_run=dry_run)
+
+        if dry_run:
+            typer.echo(
+                f"[DRY RUN] 뉴스 백필 대상: "
+                f"stock_codes={result['stock_codes']}, "
+                f"total_days={result['total_days']}"
+            )
+        else:
+            typer.echo(
+                f"뉴스 백필 완료: "
+                f"fetched={result['fetched']}, "
+                f"saved={result['saved']}, "
+                f"skipped={result['skipped']}"
+            )
+
+    asyncio.run(_run())
+
+
+@backfill_app.command("all")
+def backfill_all_cmd(
+    macro_months: int = typer.Option(12, "--macro-months", help="매크로 백필 기간 (개월)"),
+    dart_months: int = typer.Option(12, "--dart-months", help="DART 백필 기간 (개월)"),
+    news_months: int = typer.Option(6, "--news-months", help="뉴스 백필 기간 (개월)"),
+    candle_months: int = typer.Option(6, "--candle-months", help="분봉 백필 기간 (개월)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="수집 대상 건수만 출력"),
+) -> None:
+    """전체 데이터 백필."""
+
+    async def _run() -> None:
+        from datetime import date as date_type
+
+        from app.database import async_session
+
+        today = date_type.today()
+
+        # 매크로 백필
+        typer.echo(f"\n=== 매크로 백필 ({macro_months}개월) ===")
+        macro_start = today - timedelta(days=macro_months * 30)
+        try:
+            from app.services.macro_collector import backfill_macro
+            async with async_session() as session:
+                result = await backfill_macro(session, macro_start, today, dry_run=dry_run)
+            typer.echo(f"매크로: inserted={result['inserted']}, updated={result['updated']}")
+        except Exception as exc:
+            typer.echo(f"매크로 백필 오류: {exc}", err=True)
+
+        # DART 백필
+        typer.echo(f"\n=== DART 백필 ({dart_months}개월) ===")
+        dart_start = datetime.combine(today - timedelta(days=dart_months * 30), datetime.min.time())
+        dart_end = datetime.combine(today, datetime.min.time())
+        try:
+            from app.services.dart_collector import backfill_dart
+            async with async_session() as session:
+                result = await backfill_dart(session, dart_start, dart_end, dry_run=dry_run)
+            typer.echo(f"DART: fetched={result['fetched']}, saved={result['saved']}, new={result['new']}")
+        except Exception as exc:
+            typer.echo(f"DART 백필 오류: {exc}", err=True)
+
+        # 뉴스 백필
+        typer.echo(f"\n=== 뉴스 백필 ({news_months}개월) ===")
+        news_start = today - timedelta(days=news_months * 30)
+        try:
+            from app.services.news_collector import backfill_news
+            async with async_session() as session:
+                result = await backfill_news(session, news_start, today, dry_run=dry_run)
+            typer.echo(f"뉴스: fetched={result['fetched']}, saved={result['saved']}, skipped={result['skipped']}")
+        except Exception as exc:
+            typer.echo(f"뉴스 백필 오류: {exc}", err=True)
+
+        typer.echo("\n=== 전체 백필 완료 ===")
 
     asyncio.run(_run())
 

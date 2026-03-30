@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Index, String, Text, func
+from sqlalchemy import Boolean, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -19,6 +19,7 @@ class DartDisclosure(Base):
     link: Mapped[str] = mapped_column(String(2048), default="")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    is_processed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     __table_args__ = (
@@ -28,4 +29,5 @@ class DartDisclosure(Base):
         Index("ix_dart_disclosures_stock_code_published_at", "stock_code", "published_at"),
         Index("ix_dart_disclosures_stock_code_created_at", "stock_code", "created_at"),
         Index("ix_dart_disclosures_corp_code", "corp_code"),
+        Index("ix_dart_disclosures_is_processed", "is_processed"),
     )

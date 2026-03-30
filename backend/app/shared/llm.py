@@ -160,7 +160,10 @@ async def get_llm_level(param_key: str, default: str = "normal") -> str:
 
     async with async_session() as db:
         result = await db.execute(
-            select(SystemParameter).where(SystemParameter.key == param_key)
+            select(SystemParameter).where(
+                SystemParameter.key == param_key,
+                SystemParameter.strategy_id.is_(None),
+            )
         )
         param = result.scalar_one_or_none()
         return param.value if param else default
