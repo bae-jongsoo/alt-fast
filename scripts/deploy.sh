@@ -42,10 +42,6 @@ cd "$PROJECT_DIR/frontend"
 npm ci --silent
 npm run build
 
-STEP="nginx reload"
-echo "=== nginx reload ==="
-nginx -s reload
-
 STEP="supervisor restart"
 echo "=== supervisor restart ==="
 $SUPERVISORCTL -c "$SUPERVISOR_CONF" reread

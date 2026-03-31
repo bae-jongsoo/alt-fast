@@ -34,11 +34,15 @@ export interface PromptTemplateItem {
   created_at: string;
 }
 
+export interface PromptGroup {
+  prompt_type: string;
+  label: string;
+  active: PromptTemplateItem | null;
+  versions: PromptTemplateItem[];
+}
+
 export interface PromptTemplateListResponse {
-  buy_prompt: PromptTemplateItem | null;
-  sell_prompt: PromptTemplateItem | null;
-  buy_versions: PromptTemplateItem[];
-  sell_versions: PromptTemplateItem[];
+  groups: PromptGroup[];
 }
 
 // ── 시스템 파라미터 타입 ──
@@ -47,6 +51,7 @@ export interface SystemParameterItem {
   key: string;
   value: string;
   updated_at: string;
+  strategy_name: string | null;
 }
 
 export interface SystemParameterListResponse {
@@ -132,10 +137,13 @@ export function useUpdatePrompt() {
 
 // ── 시스템 파라미터 훅 ──
 
-export function useParameters() {
+export function useParameters(strategyId?: number | null) {
+  const params: Record<string, unknown> = {};
+  if (strategyId != null) params.strategy_id = strategyId;
+
   return useQuery<SystemParameterListResponse>({
-    queryKey: ["settings", "parameters"],
-    queryFn: () => api.get("/settings/parameters").then((res) => res.data),
+    queryKey: ["settings", "parameters", strategyId ?? "all"],
+    queryFn: () => api.get("/settings/parameters", { params }).then((res) => res.data),
   });
 }
 

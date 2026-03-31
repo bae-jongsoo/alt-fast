@@ -12,6 +12,7 @@ from app.models.prompt_template import PromptTemplate
 from app.models.system_parameter import SystemParameter
 from app.models.target_stock import TargetStock
 from app.schemas.settings import (
+    PromptGroup,
     PromptTemplateItem,
     PromptTemplateListResponse,
     PromptTemplateUpdate,
@@ -76,6 +77,33 @@ PROMPT_VARIABLES: dict[str, list[str]] = {
         "holding_quantity",
         "avg_buy_price",
     ],
+    "event_buy": [
+        "current_time",
+        "event_type",
+        "stock_code",
+        "stock_name",
+        "context_json",
+    ],
+    "event_sell": [
+        "current_time",
+        "stock_code",
+        "stock_name",
+        "context_json",
+    ],
+}
+
+# 전략별 프롬프트 타입 정의
+STRATEGY_PROMPT_TYPES: dict[str, list[tuple[str, str]]] = {
+    "default": [("buy", "매수 프롬프트"), ("sell", "매도 프롬프트")],
+    "event_trader": [("event_buy", "이벤트 매수 프롬프트"), ("event_sell", "이벤트 매도 프롬프트")],
+}
+
+# prompt_type → 한글 라벨
+PROMPT_TYPE_LABELS: dict[str, str] = {
+    "buy": "매수 프롬프트",
+    "sell": "매도 프롬프트",
+    "event_buy": "이벤트 매수 프롬프트",
+    "event_sell": "이벤트 매도 프롬프트",
 }
 
 
@@ -222,70 +250,61 @@ async def delete_stock(db: AsyncSession, stock_code: str, strategy_id: int | Non
 
 
 async def get_prompts(db: AsyncSession, strategy_id: int | None = None) -> PromptTemplateListResponse:
-    # 활성 프롬프트
+    from app.models.strategy import Strategy
+
+    # 대상 prompt_type 결정
+    if strategy_id is not None:
+        strat = await db.get(Strategy, strategy_id)
+        strat_name = strat.name if strat else "default"
+        target_types = STRATEGY_PROMPT_TYPES.get(strat_name, STRATEGY_PROMPT_TYPES["default"])
+    else:
+        # 전체: 모든 전략의 프롬프트를 합산
+        target_types = [pt for pts in STRATEGY_PROMPT_TYPES.values() for pt in pts]
+
+    # 활성 프롬프트 조회
     active_q = select(PromptTemplate).where(PromptTemplate.is_active.is_(True))
     if strategy_id is not None:
         active_q = active_q.where(PromptTemplate.strategy_id == strategy_id)
     active_result = await db.execute(active_q)
-    active_prompts = active_result.scalars().all()
-
-    buy_prompt = None
-    sell_prompt = None
-    for p in active_prompts:
-        item = PromptTemplateItem(
-            id=p.id,
-            prompt_type=p.prompt_type,
-            content=p.content,
-            version=p.version,
-            is_active=p.is_active,
-            created_at=p.created_at,
+    active_map: dict[str, PromptTemplateItem] = {}
+    for p in active_result.scalars().all():
+        active_map[p.prompt_type] = PromptTemplateItem(
+            id=p.id, prompt_type=p.prompt_type, content=p.content,
+            version=p.version, is_active=p.is_active, created_at=p.created_at,
         )
-        if p.prompt_type == "buy":
-            buy_prompt = item
-        elif p.prompt_type == "sell":
-            sell_prompt = item
 
-    # 버전 이력 (각 타입별 최근 10개)
-    buy_v_q = select(PromptTemplate).where(PromptTemplate.prompt_type == "buy")
-    sell_v_q = select(PromptTemplate).where(PromptTemplate.prompt_type == "sell")
-    if strategy_id is not None:
-        buy_v_q = buy_v_q.where(PromptTemplate.strategy_id == strategy_id)
-        sell_v_q = sell_v_q.where(PromptTemplate.strategy_id == strategy_id)
-    buy_versions_result = await db.execute(
-        buy_v_q.order_by(PromptTemplate.version.desc()).limit(10)
-    )
-    sell_versions_result = await db.execute(
-        sell_v_q.order_by(PromptTemplate.version.desc()).limit(10)
-    )
-
-    def to_items(rows) -> list[PromptTemplateItem]:
-        return [
+    # 타입별 버전 이력 조회 + 그룹 구성
+    groups: list[PromptGroup] = []
+    for prompt_type, label in target_types:
+        v_q = select(PromptTemplate).where(PromptTemplate.prompt_type == prompt_type)
+        if strategy_id is not None:
+            v_q = v_q.where(PromptTemplate.strategy_id == strategy_id)
+        v_result = await db.execute(v_q.order_by(PromptTemplate.version.desc()).limit(10))
+        versions = [
             PromptTemplateItem(
-                id=r.id,
-                prompt_type=r.prompt_type,
-                content=r.content,
-                version=r.version,
-                is_active=r.is_active,
-                created_at=r.created_at,
+                id=r.id, prompt_type=r.prompt_type, content=r.content,
+                version=r.version, is_active=r.is_active, created_at=r.created_at,
             )
-            for r in rows
+            for r in v_result.scalars().all()
         ]
+        groups.append(PromptGroup(
+            prompt_type=prompt_type,
+            label=label,
+            active=active_map.get(prompt_type),
+            versions=versions,
+        ))
 
-    return PromptTemplateListResponse(
-        buy_prompt=buy_prompt,
-        sell_prompt=sell_prompt,
-        buy_versions=to_items(buy_versions_result.scalars().all()),
-        sell_versions=to_items(sell_versions_result.scalars().all()),
-    )
+    return PromptTemplateListResponse(groups=groups)
 
 
 async def update_prompt(
     db: AsyncSession, prompt_type: str, data: PromptTemplateUpdate, strategy_id: int | None = None
 ) -> PromptTemplateItem:
-    if prompt_type not in ("buy", "sell"):
+    valid_types = {"buy", "sell", "event_buy", "event_sell"}
+    if prompt_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="prompt_type은 'buy' 또는 'sell'이어야 합니다.",
+            detail=f"prompt_type은 {sorted(valid_types)} 중 하나여야 합니다.",
         )
 
     # 기존 활성 프롬프트 비활성화 및 최대 버전 조회
@@ -339,24 +358,52 @@ def get_prompt_variables() -> dict[str, list[str]]:
 # ──────────────────────────────────────────────
 
 
-async def get_parameters(db: AsyncSession) -> SystemParameterListResponse:
-    result = await db.execute(
-        select(SystemParameter)
-        .where(SystemParameter.strategy_id.is_(None))
-        .order_by(SystemParameter.key.asc())
-    )
-    params = result.scalars().all()
+async def get_parameters(
+    db: AsyncSession, strategy_id: int | None = None, include_common: bool = True,
+) -> SystemParameterListResponse:
+    from app.models.strategy import Strategy
 
-    return SystemParameterListResponse(
-        items=[
-            SystemParameterItem(
-                key=p.key,
-                value=p.value,
-                updated_at=p.updated_at,
+    items: list[SystemParameterItem] = []
+
+    # 공통 파라미터 (strategy_id IS NULL)
+    if include_common:
+        common_result = await db.execute(
+            select(SystemParameter)
+            .where(SystemParameter.strategy_id.is_(None))
+            .order_by(SystemParameter.key.asc())
+        )
+        for p in common_result.scalars().all():
+            items.append(SystemParameterItem(
+                key=p.key, value=p.value, updated_at=p.updated_at, strategy_name=None,
+            ))
+
+    # 전략별 파라미터
+    if strategy_id is not None:
+        strat_result = await db.execute(
+            select(SystemParameter)
+            .where(SystemParameter.strategy_id == strategy_id)
+            .order_by(SystemParameter.key.asc())
+        )
+        strat = await db.get(Strategy, strategy_id)
+        strat_name = strat.name if strat else None
+        for p in strat_result.scalars().all():
+            items.append(SystemParameterItem(
+                key=p.key, value=p.value, updated_at=p.updated_at, strategy_name=strat_name,
+            ))
+    elif not include_common or strategy_id is None:
+        # 전체 모드: 모든 전략 파라미터도 포함
+        if strategy_id is None:
+            strat_result = await db.execute(
+                select(SystemParameter, Strategy.name)
+                .join(Strategy, SystemParameter.strategy_id == Strategy.id)
+                .order_by(Strategy.name.asc(), SystemParameter.key.asc())
             )
-            for p in params
-        ]
-    )
+            for p, sname in strat_result.all():
+                items.append(SystemParameterItem(
+                    key=p.key, value=p.value, updated_at=p.updated_at, strategy_name=sname,
+                ))
+
+    return SystemParameterListResponse(items=items)
 
 
 async def update_parameters(

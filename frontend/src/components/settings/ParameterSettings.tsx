@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useStrategyContext } from "@/hooks/useStrategy";
 import {
   useParameters,
   useUpdateParameters,
   useResetParameters,
 } from "@/hooks/useSettings";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -120,6 +122,88 @@ const PARAMETER_META: Record<string, ParameterMeta> = {
       { value: "gemini", label: "Gemini API" },
     ],
   },
+  // event_trader 전략 파라미터
+  event_trader_interval: {
+    label: "이벤트 트레이딩 루프 간격",
+    unit: "초",
+    type: "int",
+    min: 10,
+    max: 600,
+  },
+  event_trader_market_end: {
+    label: "이벤트 트레이딩 마감 시각",
+    unit: "-",
+    type: "time",
+    min: "14:00",
+    max: "16:00",
+  },
+  event_trader_sizing_mode: {
+    label: "포지션 사이징 모드",
+    unit: "-",
+    type: "select",
+    options: [
+      { value: "fixed", label: "고정 금액" },
+      { value: "pct", label: "비율 기반" },
+    ],
+  },
+  event_trader_fixed_amount: {
+    label: "고정 매수 금액",
+    unit: "원",
+    type: "int",
+    min: 100000,
+    max: 10000000,
+  },
+  event_trader_max_single_stock_pct: {
+    label: "단일 종목 최대 비중",
+    unit: "%",
+    type: "int",
+    min: 1,
+    max: 100,
+  },
+  event_trader_min_cash_reserve_pct: {
+    label: "최소 현금 보유 비중",
+    unit: "%",
+    type: "int",
+    min: 0,
+    max: 100,
+  },
+  event_trader_default_stop_pct: {
+    label: "기본 손절 수준",
+    unit: "%",
+    type: "int",
+    min: -20,
+    max: 0,
+  },
+  cb_max_consecutive_losses: {
+    label: "서킷브레이커 연속 손실 횟수",
+    unit: "회",
+    type: "int",
+    min: 1,
+    max: 20,
+  },
+  cb_daily_loss_limit_pct: {
+    label: "일일 손실 한계",
+    unit: "%",
+    type: "int",
+    min: 1,
+    max: 20,
+  },
+  cb_max_daily_trades: {
+    label: "일일 최대 거래 수",
+    unit: "회",
+    type: "int",
+    min: 1,
+    max: 50,
+  },
+  llm_event_trading: {
+    label: "이벤트 트레이딩 판단 모델",
+    unit: "-",
+    type: "select",
+    options: [
+      { value: "normal", label: "normal (openclaw)" },
+      { value: "high", label: "high (nanobot)" },
+    ],
+  },
 };
 
 interface ParameterSettingsProps {
@@ -139,7 +223,8 @@ export default function ParameterSettings({
 }: ParameterSettingsProps) {
   const { isLoggedIn } = useAuth();
   const navigate = useNavigate();
-  const { data, isLoading } = useParameters();
+  const { selectedStrategyId } = useStrategyContext();
+  const { data, isLoading } = useParameters(selectedStrategyId);
   const updateParams = useUpdateParameters();
   const resetParams = useResetParameters();
 
@@ -328,8 +413,21 @@ export default function ParameterSettings({
             items.map((item) => {
               const meta = PARAMETER_META[item.key];
               return (
-                <TableRow key={item.key}>
-                  <TableCell>{meta?.label ?? item.key}</TableCell>
+                <TableRow key={`${item.strategy_name ?? "common"}-${item.key}`}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {meta?.label ?? item.key}
+                      {selectedStrategyId !== null && item.strategy_name === null && (
+                        <Badge variant="outline" className="text-xs">공통</Badge>
+                      )}
+                      {selectedStrategyId === null && item.strategy_name !== null && (
+                        <Badge variant="secondary" className="text-xs">{item.strategy_name}</Badge>
+                      )}
+                      {selectedStrategyId === null && item.strategy_name === null && (
+                        <Badge variant="outline" className="text-xs">공통</Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {isEditing ? (
                       <div className="space-y-1">

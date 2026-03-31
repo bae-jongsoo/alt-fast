@@ -12,12 +12,17 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 
-const navItems = [
+/** 전략 셀렉터에 연동되는 메뉴 */
+const strategyNavItems = [
   { to: "/", label: "대시보드" },
   { to: "/trades", label: "매매이력" },
+  { to: "/settings", label: "설정" },
+] as const;
+
+/** 전략과 무관한 공통 메뉴 */
+const commonNavItems = [
   { to: "/news", label: "뉴스·공시" },
   { to: "/chart", label: "차트" },
-  { to: "/settings", label: "설정" },
 ] as const;
 
 function NavLinkItem({
@@ -97,8 +102,8 @@ export default function Navbar() {
       aria-label="메인 네비게이션"
     >
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
-        {/* 좌측: 로고 + 전략 셀렉터 */}
-        <div className="flex items-center gap-3">
+        {/* 좌측: 로고 */}
+        <div className="flex items-center">
           <Link
             to="/"
             className="text-lg font-bold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
@@ -106,12 +111,16 @@ export default function Navbar() {
           >
             ALT
           </Link>
-          <StrategySelector />
         </div>
 
-        {/* 중앙: 데스크톱 네비게이션 */}
+        {/* 중앙: 데스크톱 네비게이션 (전략별 | 공통) */}
         <div className="hidden md:flex items-center gap-1" role="menubar">
-          {navItems.map((item) => (
+          <StrategySelector />
+          {strategyNavItems.map((item) => (
+            <NavLinkItem key={item.to} to={item.to} label={item.label} />
+          ))}
+          <div className="mx-2 h-5 w-px bg-border" role="separator" aria-hidden />
+          {commonNavItems.map((item) => (
             <NavLinkItem key={item.to} to={item.to} label={item.label} />
           ))}
         </div>
@@ -185,8 +194,16 @@ export default function Navbar() {
             <div className="px-3 py-2">
               <StrategySelector />
             </div>
+            {strategyNavItems.map((item) => (
+              <NavLinkItem
+                key={item.to}
+                to={item.to}
+                label={item.label}
+                onClick={() => setMobileMenuOpen(false)}
+              />
+            ))}
             <div className="my-2 h-px bg-border" role="separator" />
-            {navItems.map((item) => (
+            {commonNavItems.map((item) => (
               <NavLinkItem
                 key={item.to}
                 to={item.to}

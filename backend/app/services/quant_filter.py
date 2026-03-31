@@ -254,15 +254,14 @@ async def apply_quant_filter(
     strategy_id = event.strategy_id
 
     # 필터 순서대로 실행 (하나라도 실패하면 즉시 반환)
+    # 거래량 필터는 제외 — 대형 타겟 종목 대상이라 LLM 컨텍스트로 대체
     filter_specs: list[tuple[str, tuple]] = [
-        ("volume", (stock_code, min_volume_ratio)),
         ("spread", (stock_code, max_spread_pct)),
         ("market_cap", (stock_code, min_market_cap)),
         ("price", (stock_code, min_price)),
         ("trading_halt", (stock_code,)),
     ]
     filter_funcs = {
-        "volume": _check_volume,
         "spread": _check_spread,
         "market_cap": _check_market_cap,
         "price": _check_price,

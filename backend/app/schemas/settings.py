@@ -46,11 +46,16 @@ class PromptTemplateUpdate(BaseModel):
     content: str
 
 
+class PromptGroup(BaseModel):
+    """프롬프트 타입별 활성 프롬프트 + 버전 이력"""
+    prompt_type: str
+    label: str
+    active: PromptTemplateItem | None = None
+    versions: list[PromptTemplateItem] = []
+
+
 class PromptTemplateListResponse(BaseModel):
-    buy_prompt: PromptTemplateItem | None
-    sell_prompt: PromptTemplateItem | None
-    buy_versions: list[PromptTemplateItem]
-    sell_versions: list[PromptTemplateItem]
+    groups: list[PromptGroup]
 
 
 # --- 시스템 파라미터 ---
@@ -58,6 +63,7 @@ class SystemParameterItem(BaseModel):
     key: str
     value: str
     updated_at: datetime
+    strategy_name: str | None = None
 
 
 class SystemParameterUpdate(BaseModel):

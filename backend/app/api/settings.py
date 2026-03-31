@@ -83,8 +83,8 @@ async def list_prompt_variables():
 
 
 @router.get("/parameters", response_model=SystemParameterListResponse)
-async def list_parameters(db: AsyncSession = Depends(get_db)):
-    return await get_parameters(db)
+async def list_parameters(strategy_id: int | None = None, db: AsyncSession = Depends(get_db)):
+    return await get_parameters(db, strategy_id=strategy_id)
 
 
 @router.put("/parameters", response_model=SystemParameterListResponse)

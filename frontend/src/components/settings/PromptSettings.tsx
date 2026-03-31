@@ -1,10 +1,12 @@
 import { useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useStrategyContext } from "@/hooks/useStrategy";
 import {
   usePrompts,
   usePromptVariables,
   useUpdatePrompt,
+  type PromptGroup,
   type PromptTemplateItem,
 } from "@/hooks/useSettings";
 import { formatDateTime } from "@/lib/format";
@@ -21,6 +23,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 
+/** prompt_type → 전략 이름 매핑 (전체 모드에서 뱃지 표시용) */
+const PROMPT_STRATEGY_MAP: Record<string, string> = {
+  buy: "default",
+  sell: "default",
+  event_buy: "event_trader",
+  event_sell: "event_trader",
+};
+
 interface PromptSettingsProps {
   onDirtyChange: (dirty: boolean) => void;
 }
@@ -28,11 +38,12 @@ interface PromptSettingsProps {
 export default function PromptSettings({ onDirtyChange }: PromptSettingsProps) {
   const { isLoggedIn } = useAuth();
   const navigate = useNavigate();
-  const { data, isLoading } = usePrompts();
+  const { selectedStrategyId } = useStrategyContext();
+  const { data, isLoading } = usePrompts(selectedStrategyId);
   const { data: variables } = usePromptVariables();
   const updatePrompt = useUpdatePrompt();
 
-  const [editingType, setEditingType] = useState<"buy" | "sell" | null>(null);
+  const [editingGroup, setEditingGroup] = useState<PromptGroup | null>(null);
   const [editContent, setEditContent] = useState("");
   const [showVersionConfirm, setShowVersionConfirm] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<PromptTemplateItem | null>(null);
@@ -41,29 +52,24 @@ export default function PromptSettings({ onDirtyChange }: PromptSettingsProps) {
   const [showMissingVarsWarning, setShowMissingVarsWarning] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
-  const buyPrompt = data?.buy_prompt;
-  const sellPrompt = data?.sell_prompt;
-  const buyVersions = data?.buy_versions ?? [];
-  const sellVersions = data?.sell_versions ?? [];
+  const groups = data?.groups ?? [];
 
-  const currentVersions = editingType === "buy" ? buyVersions : sellVersions;
-  const currentVariables = editingType
-    ? variables?.[editingType] ?? []
+  const currentVariables = editingGroup
+    ? variables?.[editingGroup.prompt_type] ?? []
     : [];
 
-  function handleEditClick(type: "buy" | "sell") {
+  function handleEditClick(group: PromptGroup) {
     if (!isLoggedIn) {
       navigate(`/login?redirect=${encodeURIComponent("/settings")}`);
       return;
     }
-    const prompt = type === "buy" ? buyPrompt : sellPrompt;
-    setEditContent(prompt?.content ?? "");
-    setEditingType(type);
+    setEditContent(group.active?.content ?? "");
+    setEditingGroup(group);
     onDirtyChange(false);
   }
 
   function handleCloseEditor() {
-    setEditingType(null);
+    setEditingGroup(null);
     setEditContent("");
     onDirtyChange(false);
   }
@@ -80,7 +86,6 @@ export default function PromptSettings({ onDirtyChange }: PromptSettingsProps) {
     setEditContent(newContent);
     onDirtyChange(true);
 
-    // 커서 위치 복원
     requestAnimationFrame(() => {
       editor.focus();
       editor.selectionStart = start + tag.length;
@@ -103,11 +108,11 @@ export default function PromptSettings({ onDirtyChange }: PromptSettingsProps) {
   }
 
   const checkMissingVariables = useCallback((): string[] => {
-    if (!editingType || !currentVariables.length) return [];
+    if (!editingGroup || !currentVariables.length) return [];
     return currentVariables.filter(
       (v) => !editContent.includes(`{${v}}`)
     );
-  }, [editingType, currentVariables, editContent]);
+  }, [editingGroup, currentVariables, editContent]);
 
   function handleSaveClick() {
     const missing = checkMissingVariables();
@@ -125,12 +130,13 @@ export default function PromptSettings({ onDirtyChange }: PromptSettingsProps) {
   }
 
   async function confirmSave() {
-    if (!editingType) return;
+    if (!editingGroup) return;
 
     try {
       await updatePrompt.mutateAsync({
-        promptType: editingType,
+        promptType: editingGroup.prompt_type,
         content: editContent,
+        strategyId: selectedStrategyId ?? undefined,
       });
       toast.success("변경사항이 저장되었습니다. 다음 사이클부터 적용됩니다.");
       setShowSaveConfirm(false);
@@ -151,13 +157,13 @@ export default function PromptSettings({ onDirtyChange }: PromptSettingsProps) {
     );
   }
 
-  // 슬라이드 패널(편집 모드)
-  if (editingType) {
+  // 편집 모드
+  if (editingGroup) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium">
-            {editingType === "buy" ? "매수" : "매도"} 프롬프트 편집
+            {editingGroup.label} 편집
           </h3>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handleCloseEditor}>
@@ -212,13 +218,13 @@ export default function PromptSettings({ onDirtyChange }: PromptSettingsProps) {
             {/* 이전 버전 목록 */}
             <div className="rounded-lg border p-4 space-y-3">
               <p className="text-sm font-medium">이전 버전</p>
-              {currentVersions.length === 0 ? (
+              {editingGroup.versions.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   이전 버전이 없습니다.
                 </p>
               ) : (
                 <div className="space-y-1 max-h-[300px] overflow-y-auto">
-                  {currentVersions.map((ver) => (
+                  {editingGroup.versions.map((ver) => (
                     <button
                       key={ver.id}
                       className="w-full text-left rounded-md px-3 py-2 text-sm hover:bg-muted transition-colors"
@@ -318,59 +324,43 @@ export default function PromptSettings({ onDirtyChange }: PromptSettingsProps) {
   }
 
   // 읽기 모드
+  const isAllMode = selectedStrategyId === null;
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-medium">프롬프트 설정</h3>
 
-      {/* 매수 프롬프트 */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="font-medium">매수 프롬프트</span>
-            {buyPrompt && (
-              <span className="ml-2 text-xs text-muted-foreground">
-                v{buyPrompt.version} /{" "}
-                {formatDateTime(new Date(buyPrompt.created_at))}
-              </span>
-            )}
+      {groups.map((group) => (
+        <div key={group.prompt_type} className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{group.label}</span>
+              {isAllMode && (
+                <Badge variant="secondary" className="text-xs">
+                  {PROMPT_STRATEGY_MAP[group.prompt_type] ?? "unknown"}
+                </Badge>
+              )}
+              {group.active && (
+                <span className="text-xs text-muted-foreground">
+                  v{group.active.version} /{" "}
+                  {formatDateTime(new Date(group.active.created_at))}
+                </span>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleEditClick(group)}
+              disabled={isAllMode}
+            >
+              수정
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleEditClick("buy")}
-          >
-            수정
-          </Button>
+          <pre className="rounded-lg border bg-muted/30 p-4 text-sm font-mono whitespace-pre-wrap max-h-[300px] overflow-y-auto">
+            {group.active?.content ?? "프롬프트가 설정되지 않았습니다."}
+          </pre>
         </div>
-        <pre className="rounded-lg border bg-muted/30 p-4 text-sm font-mono whitespace-pre-wrap max-h-[300px] overflow-y-auto">
-          {buyPrompt?.content ?? "프롬프트가 설정되지 않았습니다."}
-        </pre>
-      </div>
-
-      {/* 매도 프롬프트 */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="font-medium">매도 프롬프트</span>
-            {sellPrompt && (
-              <span className="ml-2 text-xs text-muted-foreground">
-                v{sellPrompt.version} /{" "}
-                {formatDateTime(new Date(sellPrompt.created_at))}
-              </span>
-            )}
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleEditClick("sell")}
-          >
-            수정
-          </Button>
-        </div>
-        <pre className="rounded-lg border bg-muted/30 p-4 text-sm font-mono whitespace-pre-wrap max-h-[300px] overflow-y-auto">
-          {sellPrompt?.content ?? "프롬프트가 설정되지 않았습니다."}
-        </pre>
-      </div>
+      ))}
     </div>
   );
 }
